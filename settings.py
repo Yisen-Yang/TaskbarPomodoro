@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal
 
 from theme import THEMES
+from app_icon import get_app_icon
 import sounds
 
 
@@ -116,6 +117,7 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings_manager = settings_manager
         self.setWindowTitle("设置")
+        self.setWindowIcon(get_app_icon())
         # 独立顶层窗口 + 置顶，避免被主窗口的 50ms topmost 抢占导致闪动
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
         self.setAttribute(Qt.WA_TranslucentBackground, False)

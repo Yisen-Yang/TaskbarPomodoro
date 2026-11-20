@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
+from app_icon import get_app_icon
 
 
 class HistoryDialog(QDialog):
@@ -14,6 +15,7 @@ class HistoryDialog(QDialog):
         super().__init__(parent)
         self.history_manager = history_manager
         self.setWindowTitle("历史记录")
+        self.setWindowIcon(get_app_icon())
         self.setFixedSize(500, 400)
         self.init_ui()
     

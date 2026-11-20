@@ -14,21 +14,15 @@ from PySide6.QtGui import (
 import os
 
 from theme import get_palette
+from app_icon import get_app_icon
 
 user32 = ctypes.windll.user32
 shell32 = ctypes.windll.shell32
 
 
 def _app_icon():
-    """加载应用番茄图标（兼容开发环境与打包 EXE）。"""
-    if getattr(sys, 'frozen', False):
-        base = sys._MEIPASS
-    else:
-        base = os.path.dirname(os.path.abspath(__file__))
-    path = os.path.join(base, 'assets', 'app.ico')
-    if os.path.exists(path):
-        return QIcon(path)
-    return QIcon()
+    """兼容旧调用：统一使用全局番茄图标。"""
+    return get_app_icon()
 
 # ── Windows API constants ──────────────────────────────────────────
 SWP_NOMOVE = 0x0002

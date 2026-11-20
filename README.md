@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🍅 任务栏番茄钟
+# <img src="assets/tomato.png" alt="番茄" width="44" align="absmiddle"> 任务栏番茄钟
 
 **常驻任务栏的极简番茄工作法工具 —— 专注与休息，抬眼即见。**
 
@@ -119,6 +119,7 @@ build.bat
 ```
 .
 ├── main.py              # 入口、应用逻辑、音效与通知
+├── app_icon.py          # 全局唯一番茄图标源（窗口/托盘/对话框统一）
 ├── appbar_window.py     # 任务栏窗口、进度环、拖动/置顶/跨屏自适应
 ├── timer_logic.py       # 计时状态机（单调时钟 + 长休息）
 ├── settings.py          # 设置管理与设置对话框

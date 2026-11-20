@@ -5,8 +5,16 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import math, os
 
 OUT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(OUT))
+TOMATO = os.path.join(ROOT, 'assets', 'tomato.png')  # 与软件完全相同的番茄图标
 FONT = "C:/Windows/Fonts/msyh.ttc"
 FONT_BD = "C:/Windows/Fonts/msyhbd.ttc"
+
+
+def paste_tomato(img, x, y, size):
+    """把软件同款番茄图标贴到 (x, y)，尺寸 size×size。"""
+    t = Image.open(TOMATO).convert('RGBA').resize((size, size), Image.LANCZOS)
+    img.paste(t, (x, y), t)
 
 def f(size, bold=False):
     try:
@@ -110,7 +118,8 @@ for cx,cy,rad,col in [(980,170,280,(70,90,160,30)),(220,460,240,(120,70,140,22))
     img=Image.alpha_composite(img,glow.filter(ImageFilter.GaussianBlur(80)))
 d=ImageDraw.Draw(img,"RGBA")
 
-d.text((64,56),"任务栏番茄钟",font=f(56,True),fill=(255,255,255,250))
+paste_tomato(img, 64, 50, 64)
+d.text((142,58),"任务栏番茄钟",font=f(56,True),fill=(255,255,255,250))
 d.text((66,132),"常驻任务栏 · 专注与休息，抬眼即见",font=f(25),fill=(185,195,220,235))
 
 # 特性标签
@@ -129,6 +138,9 @@ d.line([(0,tb_y0),(W,tb_y0)],fill=(70,74,92,255),width=1)
 d.text((30,tb_y0+26),"⊞",font=f(36),fill=(235,240,255,230))
 d.ellipse((104,tb_y0+29,130,tb_y0+55),outline=(200,210,235,180),width=2)
 d.line((124,tb_y0+49,133,tb_y0+58),fill=(200,210,235,180),width=2)
+# 固定在任务栏的番茄钟应用图标（同款番茄）+ 运行指示条
+paste_tomato(img, 152, tb_y0+22, 36)
+d.rounded_rectangle((158,tb_y0+62,182,tb_y0+65),radius=2,fill=(255,120,95,235))
 # 焦点窗口放大展示
 panel(img,(330,tb_y0+14,770,tb_y0+74),work=True,progress=0.62,time_txt="18:42",playing=True)
 # 标注
@@ -143,7 +155,8 @@ print("hero.png saved")
 W2,H2=1200,520
 img2=Image.new("RGBA",(W2,H2),(18,20,30,255))
 d2=ImageDraw.Draw(img2,"RGBA")
-d2.text((60,40),"专注状态一览",font=f(40,True),fill=(255,255,255,248))
+paste_tomato(img2, 60, 38, 44)
+d2.text((116,44),"专注状态一览",font=f(40,True),fill=(255,255,255,248))
 cards=[
     (60,"专注中","圆环实时显示进度\n倒计时精确到秒",True,0.62,"18:42",True),
     (460,"短休息","每轮专注后\n自动进入 5 分钟短休",False,0.35,"04:16",False),

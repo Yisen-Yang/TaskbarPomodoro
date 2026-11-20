@@ -6,7 +6,8 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
 
-from appbar_window import PomodoroWindow, _app_icon
+from appbar_window import PomodoroWindow
+from app_icon import get_app_icon
 from timer_logic import PomodoroTimer, TimerMode, TimerState
 from settings import SettingsManager, SettingsDialog
 from tray_icon import TrayIcon
@@ -412,7 +413,7 @@ def main():
     )
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
-    app.setWindowIcon(_app_icon())
+    app.setWindowIcon(get_app_icon())
 
     font = QFont("Segoe UI", 9)
     app.setFont(font)
