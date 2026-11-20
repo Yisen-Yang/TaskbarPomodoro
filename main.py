@@ -23,6 +23,18 @@ def get_sound_path(filename):
     return os.path.join(base, 'sound', filename)
 
 
+def resolve_sound(num):
+    """解析音效文件：优先自包含的 WAV，回退到用户自定义的 MP3。
+    返回 (路径, MCI 类型) 或 (None, None)。"""
+    wav = get_sound_path(f"{num}.wav")
+    mp3 = get_sound_path(f"{num}.mp3")
+    if os.path.exists(wav):
+        return wav, 'waveaudio'
+    if os.path.exists(mp3):
+        return mp3, 'mpegvideo'
+    return None, None
+
+
 # ── Windows MCI 音频播放（零外部依赖）────────────────────────────
 _mci = ctypes.windll.winmm
 _mci.mciSendStringW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_void_p]
@@ -163,15 +175,16 @@ class PomodoroApp:
 
     # ── 声音 / 通知 ──────────────────────────────────────────────
     def play_sound_file(self, file_num):
-        """通过 Windows MCI 播放 MP3：1=开始音效，2=结束音效"""
+        """通过 Windows MCI 播放提示音：1=开始/下一轮，2=专注结束。
+        优先播放自包含的 WAV（零外部依赖），若用户放入同名 MP3 则自动回退使用。"""
         try:
-            path = get_sound_path(f"{file_num}.mp3")
-            if not os.path.exists(path):
+            path, mci_type = resolve_sound(file_num)
+            if not path:
                 return
             # 关闭上一段播放
             _mci.mciSendStringW('close bgm', None, 0, None)
             # 打开并播放
-            _mci.mciSendStringW(f'open "{path}" type mpegvideo alias bgm', None, 0, None)
+            _mci.mciSendStringW(f'open "{path}" type {mci_type} alias bgm', None, 0, None)
             _mci.mciSendStringW('play bgm', None, 0, None)
             # 10 秒后自动关闭（音效文件很短，足够播完）
             QTimer.singleShot(10000, lambda: _mci.mciSendStringW('close bgm', None, 0, None))
