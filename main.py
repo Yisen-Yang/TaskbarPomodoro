@@ -57,9 +57,13 @@ class PomodoroApp:
     def setup_timer(self):
         work_minutes = self.settings_manager.get('work_minutes')
         break_minutes = self.settings_manager.get('break_minutes')
+        long_break_minutes = self.settings_manager.get('long_break_minutes')
+        long_break_interval = self.settings_manager.get('long_break_interval')
 
         self.timer.set_work_minutes(work_minutes)
         self.timer.set_break_minutes(break_minutes)
+        self.timer.set_long_break_minutes(long_break_minutes)
+        self.timer.set_long_break_interval(long_break_interval)
 
         self.current_total_seconds = work_minutes * 60
 
@@ -129,6 +133,8 @@ class PomodoroApp:
 
         if mode == TimerMode.WORK:
             self.current_total_seconds = self.timer.work_minutes * 60
+        elif mode == TimerMode.LONG_BREAK:
+            self.current_total_seconds = self.timer.long_break_minutes * 60
         else:
             self.current_total_seconds = self.timer.break_minutes * 60
 
@@ -136,38 +142,47 @@ class PomodoroApp:
         self.on_time_updated(minutes, seconds)
 
     def on_timer_completed(self, mode):
-        # 记录历史
-        mode_str = 'work' if mode == TimerMode.WORK else 'break'
-        duration = self.timer.work_minutes if mode == TimerMode.WORK else self.timer.break_minutes
-        try:
-            self.history_manager.add_record(mode_str, duration)
-        except Exception:
-            pass
-
-        # 音效逻辑
-        # 专注结束 → 播放 2.mp3
-        # 休息结束 + 连续专注 → 播放 1.mp3（下一轮开始）
-        # 休息结束 + 非连续专注 → 不播放
         continuous = self.settings_manager.get('continuous_focus')
 
-        if self.settings_manager.get('sound_enabled'):
-            if mode == TimerMode.WORK:
-                self.play_sound_file(2)
-            elif mode == TimerMode.BREAK and continuous:
-                self.play_sound_file(1)
-
-        # 通知（加 try/except 防止阻断后续自动切换）
-        try:
-            self.show_notification(mode)
-        except Exception:
-            pass
-
+        # ── 专注结束：记录、判断长休息 ────────────────────────
         if mode == TimerMode.WORK:
-            # 工作→休息：始终自动开始
-            self.timer.switch_mode(TimerMode.BREAK)
+            try:
+                self.history_manager.add_record('work', self.timer.work_minutes)
+            except Exception:
+                pass
+
+            is_long = self.timer.register_work_completed()
+            next_mode = TimerMode.LONG_BREAK if is_long else TimerMode.BREAK
+
+            if self.settings_manager.get('sound_enabled'):
+                self.play_sound_file(2)
+            try:
+                self.show_notification(mode, next_mode)
+            except Exception:
+                pass
+
+            # 工作→（短/长）休息：始终自动开始
+            self.timer.switch_mode(next_mode)
             self.timer.start()
+
+        # ── 休息结束（短休息 或 长休息）────────────────────────
         else:
-            # 休息→工作
+            mode_str = 'break'
+            duration = (self.timer.long_break_minutes if mode == TimerMode.LONG_BREAK
+                        else self.timer.break_minutes)
+            try:
+                self.history_manager.add_record(mode_str, duration)
+            except Exception:
+                pass
+
+            # 休息结束 + 连续专注 → 播放开始音效并自动进入下一轮
+            if continuous and self.settings_manager.get('sound_enabled'):
+                self.play_sound_file(1)
+            try:
+                self.show_notification(mode, TimerMode.WORK)
+            except Exception:
+                pass
+
             self.timer.switch_mode(TimerMode.WORK)
             if continuous:
                 self.timer.start()
@@ -191,16 +206,20 @@ class PomodoroApp:
         except Exception:
             pass
 
-    def show_notification(self, mode):
+    def show_notification(self, mode, next_mode=None):
+        continuous = self.settings_manager.get('continuous_focus')
         if mode == TimerMode.WORK:
-            title = "工作时间结束！"
-            message = "休息一下吧！" if not self.settings_manager.get('continuous_focus') else "休息一下吧！连续专注中..."
-        else:
-            title = "休息时间结束！"
-            if self.settings_manager.get('continuous_focus'):
-                message = "准备开始下一轮工作！"
+            title = "🍅 专注完成！"
+            if next_mode == TimerMode.LONG_BREAK:
+                message = f"已完成一轮，好好休息 {self.timer.long_break_minutes} 分钟吧！"
             else:
-                message = "准备开始工作！"
+                message = "短暂休息一下，准备下一轮专注。"
+        elif mode == TimerMode.LONG_BREAK:
+            title = "长休息结束！"
+            message = "准备开始下一轮专注！" if continuous else "准备开始专注！"
+        else:
+            title = "休息结束！"
+            message = "准备开始下一轮专注！" if continuous else "准备开始专注！"
 
         if self.tray_icon:
             self.tray_icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 3000)
@@ -243,8 +262,11 @@ class PomodoroApp:
             self.timer.set_break_minutes(break_time)
 
             # 关键：更新 current_total_seconds 以保证圆环比例正确
-            if self.timer.get_mode() == TimerMode.WORK:
+            mode = self.timer.get_mode()
+            if mode == TimerMode.WORK:
                 self.current_total_seconds = work * 60
+            elif mode == TimerMode.LONG_BREAK:
+                self.current_total_seconds = self.timer.long_break_minutes * 60
             else:
                 self.current_total_seconds = break_time * 60
 
@@ -266,13 +288,20 @@ class PomodoroApp:
     def on_settings_changed(self):
         work_minutes = self.settings_manager.get('work_minutes')
         break_minutes = self.settings_manager.get('break_minutes')
+        long_break_minutes = self.settings_manager.get('long_break_minutes')
+        long_break_interval = self.settings_manager.get('long_break_interval')
 
         self.timer.set_work_minutes(work_minutes)
         self.timer.set_break_minutes(break_minutes)
+        self.timer.set_long_break_minutes(long_break_minutes)
+        self.timer.set_long_break_interval(long_break_interval)
 
         # 关键修复：更新 current_total_seconds，否则圆环比例错误
-        if self.timer.get_mode() == TimerMode.WORK:
+        mode = self.timer.get_mode()
+        if mode == TimerMode.WORK:
             self.current_total_seconds = work_minutes * 60
+        elif mode == TimerMode.LONG_BREAK:
+            self.current_total_seconds = long_break_minutes * 60
         else:
             self.current_total_seconds = break_minutes * 60
 
