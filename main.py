@@ -6,12 +6,13 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
 
-from appbar_window import PomodoroWindow
+from appbar_window import PomodoroWindow, _app_icon
 from timer_logic import PomodoroTimer, TimerMode, TimerState
 from settings import SettingsManager, SettingsDialog
 from tray_icon import TrayIcon
 from history_manager import HistoryManager
 from history_dialog import HistoryDialog
+import sounds
 
 
 def get_sound_path(filename):
@@ -24,14 +25,21 @@ def get_sound_path(filename):
 
 
 def resolve_sound(num):
-    """解析音效文件：优先自包含的 WAV，回退到用户自定义的 MP3。
-    返回 (路径, MCI 类型) 或 (None, None)。"""
-    wav = get_sound_path(f"{num}.wav")
-    mp3 = get_sound_path(f"{num}.mp3")
-    if os.path.exists(wav):
-        return wav, 'waveaudio'
-    if os.path.exists(mp3):
-        return mp3, 'mpegvideo'
+    """旧接口兼容：1/2 映射到设置里选择的开始/结束音效。"""
+    return None, None  # 播放逻辑已改用 play_sound_key，不再使用此函数
+
+
+def resolve_sound_key(key):
+    """按音效 key 解析出 (完整路径, MCI 类型)，找不到返回 (None, None)。"""
+    filename, mci_type = sounds.resolve(key)
+    path = get_sound_path(filename)
+    if os.path.exists(path):
+        return path, mci_type
+    # 回退到经典音效
+    fallback, ftype = sounds.resolve('classic')
+    path = get_sound_path(fallback)
+    if os.path.exists(path):
+        return path, ftype
     return None, None
 
 
@@ -155,7 +163,7 @@ class PomodoroApp:
             next_mode = TimerMode.LONG_BREAK if is_long else TimerMode.BREAK
 
             if self.settings_manager.get('sound_enabled'):
-                self.play_sound_file(2)
+                self.play_sound('end')
             try:
                 self.show_notification(mode, next_mode)
             except Exception:
@@ -177,7 +185,7 @@ class PomodoroApp:
 
             # 休息结束 + 连续专注 → 播放开始音效并自动进入下一轮
             if continuous and self.settings_manager.get('sound_enabled'):
-                self.play_sound_file(1)
+                self.play_sound('start')
             try:
                 self.show_notification(mode, TimerMode.WORK)
             except Exception:
@@ -189,22 +197,24 @@ class PomodoroApp:
             # 非连续：回到 idle 初始状态
 
     # ── 声音 / 通知 ──────────────────────────────────────────────
-    def play_sound_file(self, file_num):
-        """通过 Windows MCI 播放提示音：1=开始/下一轮，2=专注结束。
-        优先播放自包含的 WAV（零外部依赖），若用户放入同名 MP3 则自动回退使用。"""
+    def play_sound(self, kind):
+        """通过 Windows MCI 播放提示音。
+        kind='start' 用设置里的开始音效，'end' 用结束音效。"""
         try:
-            path, mci_type = resolve_sound(file_num)
+            key = self.settings_manager.get(f'{kind}_sound')
+            path, mci_type = resolve_sound_key(key)
             if not path:
                 return
-            # 关闭上一段播放
             _mci.mciSendStringW('close bgm', None, 0, None)
-            # 打开并播放
             _mci.mciSendStringW(f'open "{path}" type {mci_type} alias bgm', None, 0, None)
             _mci.mciSendStringW('play bgm', None, 0, None)
-            # 10 秒后自动关闭（音效文件很短，足够播完）
             QTimer.singleShot(10000, lambda: _mci.mciSendStringW('close bgm', None, 0, None))
         except Exception:
             pass
+
+    def play_sound_file(self, file_num):
+        """旧调用兼容：1->start, 2->end。"""
+        self.play_sound('start' if file_num == 1 else 'end')
 
     def show_notification(self, mode, next_mode=None):
         continuous = self.settings_manager.get('continuous_focus')
@@ -231,7 +241,7 @@ class PomodoroApp:
         # 从 IDLE 开始工作模式时播放开始音效
         if was_idle and self.timer.is_running() and self.timer.get_mode() == TimerMode.WORK:
             if self.settings_manager.get('sound_enabled'):
-                self.play_sound_file(1)
+                self.play_sound('start')
 
     def on_reset(self):
         self.timer.reset()
@@ -241,7 +251,7 @@ class PomodoroApp:
         self.timer.start()
         if was_idle and self.timer.get_mode() == TimerMode.WORK:
             if self.settings_manager.get('sound_enabled'):
-                self.play_sound_file(1)
+                self.play_sound('start')
 
     def on_pause(self):
         self.timer.pause()
@@ -310,6 +320,8 @@ class PomodoroApp:
 
         # 更新窗口显示
         if self.window:
+            # 应用新主题（即时生效）
+            self.window.set_theme(self.settings_manager.get('theme'))
             minutes, seconds = self.timer.get_remaining_time()
             self.window.update_time_display(minutes, seconds)
             self.window.update_progress(
@@ -400,6 +412,7 @@ def main():
     )
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    app.setWindowIcon(_app_icon())
 
     font = QFont("Segoe UI", 9)
     app.setFont(font)

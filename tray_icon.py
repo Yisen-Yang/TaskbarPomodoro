@@ -1,6 +1,21 @@
+import os
+import sys
+
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
-from PySide6.QtGui import QAction, QIcon, QPixmap, QColor, QPainter
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QAction, QIcon, QPixmap
+from PySide6.QtCore import Signal
+
+
+def _load_tomato_icon():
+    """加载番茄图标（兼容开发环境与打包 EXE）。"""
+    if getattr(sys, 'frozen', False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base, 'assets', 'app.ico')
+    if os.path.exists(path):
+        return QIcon(path)
+    return QIcon()
 
 
 class TrayIcon(QSystemTrayIcon):
@@ -22,19 +37,7 @@ class TrayIcon(QSystemTrayIcon):
         self.show()
 
     def create_icon(self):
-        pixmap = QPixmap(24, 24)
-        pixmap.fill(Qt.transparent)
-
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(QColor(255, 99, 71))
-        painter.setPen(Qt.NoPen)
-        painter.drawEllipse(2, 2, 20, 20)
-        painter.setBrush(QColor(255, 255, 255))
-        painter.drawEllipse(6, 6, 4, 4)
-        painter.end()
-
-        self.setIcon(QIcon(pixmap))
+        self.setIcon(_load_tomato_icon())
 
     def create_menu(self):
         self.menu = QMenu()

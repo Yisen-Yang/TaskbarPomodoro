@@ -4,9 +4,12 @@ import winreg
 
 from PySide6.QtWidgets import (
     QDialog, QLabel, QSpinBox, QCheckBox,
-    QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox
+    QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox, QComboBox
 )
 from PySide6.QtCore import Qt, Signal
+
+from theme import THEMES
+import sounds
 
 
 class SettingsManager:
@@ -26,7 +29,11 @@ class SettingsManager:
             'auto_start_on_windows': False,
             'continuous_focus': False,
             'window_x': None,
-            'window_y': None
+            'window_y': None,
+            # 新增：主题与音效选择
+            'theme': 'deep_space',
+            'start_sound': 'classic',
+            'end_sound': 'classic',
         }
 
     def load_settings(self):
@@ -167,6 +174,18 @@ class SettingsDialog(QDialog):
                 font-size: 13px;
                 spacing: 8px;
             }
+            QComboBox {
+                padding: 4px 8px;
+                border: 1px solid #c0c0c8;
+                border-radius: 4px;
+                background-color: white;
+                min-height: 26px;
+                font-size: 13px;
+            }
+            QLabel[role="hint"] {
+                font-size: 11px;
+                color: #888;
+            }
         """)
 
         layout = QVBoxLayout(self)
@@ -223,14 +242,53 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(mode_group)
 
+        # ── 外观主题 ──
+        theme_group = QGroupBox("外观主题")
+        theme_layout = QHBoxLayout(theme_group)
+        theme_layout.addWidget(QLabel("界面主题:"))
+        self.theme_combo = QComboBox()
+        cur_theme = self.settings_manager.get('theme') or 'deep_space'
+        for label, key in THEMES.items():
+            self.theme_combo.addItem(label, key)
+        idx = self.theme_combo.findData(cur_theme)
+        self.theme_combo.setCurrentIndex(max(0, idx))
+        theme_layout.addWidget(self.theme_combo)
+        layout.addWidget(theme_group)
+
         # ── 声音设置 ──
         sound_group = QGroupBox("声音设置")
         sound_layout = QVBoxLayout(sound_group)
         sound_layout.setSpacing(8)
 
-        self.sound_check = QCheckBox("启用声音提示（内置提示音，可在 sound 目录自定义 1.mp3/2.mp3）")
+        self.sound_check = QCheckBox("启用声音提示")
         self.sound_check.setChecked(self.settings_manager.get('sound_enabled'))
         sound_layout.addWidget(self.sound_check)
+
+        # 开始音效下拉
+        start_row = QHBoxLayout()
+        start_row.addWidget(QLabel("开始 / 下一轮:"))
+        self.start_sound_combo = QComboBox()
+        for label, key in sounds.display_names():
+            self.start_sound_combo.addItem(label, key)
+        cur_start = self.settings_manager.get('start_sound') or 'classic'
+        self.start_sound_combo.setCurrentIndex(max(0, self.start_sound_combo.findData(cur_start)))
+        start_row.addWidget(self.start_sound_combo)
+        sound_layout.addLayout(start_row)
+
+        # 结束音效下拉
+        end_row = QHBoxLayout()
+        end_row.addWidget(QLabel("专注结束:"))
+        self.end_sound_combo = QComboBox()
+        for label, key in sounds.display_names():
+            self.end_sound_combo.addItem(label, key)
+        cur_end = self.settings_manager.get('end_sound') or 'classic'
+        self.end_sound_combo.setCurrentIndex(max(0, self.end_sound_combo.findData(cur_end)))
+        end_row.addWidget(self.end_sound_combo)
+        sound_layout.addLayout(end_row)
+
+        hint = QLabel("合成音效零版权；mixkit 音效来自免费素材站（不可单独转售音频文件）")
+        hint.setProperty("role", "hint")
+        sound_layout.addWidget(hint)
 
         layout.addWidget(sound_group)
 
@@ -268,5 +326,8 @@ class SettingsDialog(QDialog):
         self.settings_manager.set('continuous_focus', self.continuous_check.isChecked())
         self.settings_manager.set('sound_enabled', self.sound_check.isChecked())
         self.settings_manager.set('auto_start_on_windows', self.auto_start_check.isChecked())
+        self.settings_manager.set('theme', self.theme_combo.currentData())
+        self.settings_manager.set('start_sound', self.start_sound_combo.currentData())
+        self.settings_manager.set('end_sound', self.end_sound_combo.currentData())
         self.settings_changed.emit()
         super().accept()

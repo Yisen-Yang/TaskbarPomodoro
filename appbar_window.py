@@ -1,4 +1,5 @@
 import ctypes
+import sys
 from ctypes import wintypes
 
 from PySide6.QtWidgets import (
@@ -8,11 +9,26 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QTimer, QPoint, Signal
 from PySide6.QtGui import (
     QFont, QColor, QPainter, QPen, QBrush, QLinearGradient,
-    QGuiApplication, QAction
+    QGuiApplication, QAction, QIcon
 )
+import os
+
+from theme import get_palette
 
 user32 = ctypes.windll.user32
 shell32 = ctypes.windll.shell32
+
+
+def _app_icon():
+    """加载应用番茄图标（兼容开发环境与打包 EXE）。"""
+    if getattr(sys, 'frozen', False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    path = os.path.join(base, 'assets', 'app.ico')
+    if os.path.exists(path):
+        return QIcon(path)
+    return QIcon()
 
 # ── Windows API constants ──────────────────────────────────────────
 SWP_NOMOVE = 0x0002
@@ -94,6 +110,49 @@ class _TopmostComboBox(QComboBox):
             host._resume_topmost_if_needed()
 
 
+class _TopmostMenu(QMenu):
+    """右键菜单：弹出期间暂停宿主 topmost 刷新，并置顶菜单窗口自身。
+
+    菜单是 Qt 弹出的独立顶层窗口，默认层级低于主窗口的 HWND_TOPMOST，
+    会被主窗口 50ms 的置顶刷新压到后面。这里在 exec 期间：
+    1) 停掉宿主的 topmost 定时器；
+    2) 用短定时器反复把菜单窗口置为 TOPMOST（菜单窗口在 exec 后才创建）；
+    3) 关闭后恢复宿主的 topmost。
+    """
+
+    def __init__(self, host, parent=None):
+        super().__init__(parent)
+        self._host = host
+        self._pin_timer = QTimer(self)
+        self._pin_timer.setInterval(30)
+        self._pin_timer.timeout.connect(self._pin_self)
+
+    def exec(self, *args, **kwargs):
+        host = self._host
+        if host is not None and host.topmost_timer.isActive():
+            host.topmost_timer.stop()
+        self._pin_timer.start()
+        try:
+            return super().exec(*args, **kwargs)
+        finally:
+            self._pin_timer.stop()
+            if host is not None:
+                host._resume_topmost_if_needed()
+
+    # PySide6 的 QMenu.exec(pos) 与 exec() 都存在，统一别名
+    def _pin_self(self):
+        try:
+            hwnd = int(self.winId())
+            if hwnd:
+                user32.SetWindowPos(
+                    hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
+                )
+                user32.BringWindowToTop(hwnd)
+        except Exception:
+            pass
+
+
 class PomodoroWindow(QWidget):
     start_pause_clicked = Signal()
     reset_clicked = Signal()
@@ -113,6 +172,9 @@ class PomodoroWindow(QWidget):
         self.is_pinned = True
         self.progress = 0.0
         self.is_work_mode = True
+        self.palette = get_palette(self.settings_manager.get('theme'))
+
+        self.setWindowIcon(_app_icon())
 
         self.topmost_timer = QTimer(self)
         self.topmost_timer.setInterval(50)
@@ -128,55 +190,6 @@ class PomodoroWindow(QWidget):
             Qt.Tool
         )
         self.setAttribute(Qt.WA_TranslucentBackground)
-
-        # 扁平化样式（逻辑像素，Qt6 自动处理 DPI 缩放）
-        self.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                border: none;
-                border-radius: 6px;
-                color: rgba(255, 255, 255, 0.82);
-                font-size: 20px;
-                padding: 0px;
-            }
-            QPushButton:hover {
-                color: rgba(255, 255, 255, 1.0);
-                background: rgba(255, 255, 255, 0.08);
-            }
-            QPushButton:pressed {
-                background: rgba(255, 255, 255, 0.16);
-            }
-            QComboBox {
-                background: rgba(255, 255, 255, 0.06);
-                border: none;
-                border-radius: 5px;
-                color: rgba(255, 255, 255, 0.88);
-                font-size: 12px;
-                padding: 3px 6px;
-                min-width: 46px;
-                max-width: 56px;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 16px;
-            }
-            QComboBox::down-arrow {
-                image: none;
-                border-left: 3px solid transparent;
-                border-right: 3px solid transparent;
-                border-top: 4px solid rgba(255, 255, 255, 0.6);
-                margin-right: 4px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #1a1a28;
-                color: #e0e0e8;
-                selection-background-color: #2e2e44;
-                border: 1px solid #2a2a3c;
-                border-radius: 6px;
-                outline: none;
-                padding: 4px;
-            }
-        """)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(10, 2, 10, 2)
@@ -216,6 +229,71 @@ class PomodoroWindow(QWidget):
 
         # 根据当前屏幕计算尺寸
         self._apply_sizing()
+
+        # 控件建好后应用主题样式（时间标签、进度环此时才存在）
+        self._apply_theme()
+
+    def _apply_theme(self):
+        """用当前主题配色刷新整窗样式（切换主题时调用）。"""
+        p = self.palette
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 6px;
+                color: {p['btn_color']};
+                font-size: 20px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                color: {p['btn_hover_color']};
+                background: {p['btn_hover_bg']};
+            }}
+            QPushButton:pressed {{
+                background: {p['btn_pressed_bg']};
+            }}
+            QComboBox {{
+                background: {p['combo_bg']};
+                border: none;
+                border-radius: 5px;
+                color: {p['combo_color']};
+                font-size: 12px;
+                padding: 3px 6px;
+                min-width: 46px;
+                max-width: 56px;
+            }}
+            QComboBox::drop-down {{
+                border: none;
+                width: 16px;
+            }}
+            QComboBox::down-arrow {{
+                image: none;
+                border-left: 3px solid transparent;
+                border-right: 3px solid transparent;
+                border-top: 4px solid {p['combo_arrow']};
+                margin-right: 4px;
+            }}
+            QComboBox QAbstractItemView {{
+                background-color: {p['popup_bg']};
+                color: {p['popup_text']};
+                selection-background-color: {p['popup_sel']};
+                border: 1px solid {p['popup_border']};
+                border-radius: 6px;
+                outline: none;
+                padding: 4px;
+            }}
+        """)
+        # 时间标签颜色跟随主题
+        r, g, b, a = p['time_color']
+        self.time_label.setStyleSheet(f"color: rgba({r}, {g}, {b}, {a});")
+        # 进度环同步主题并重绘
+        self.progress_widget.set_palette(p)
+        self.update()
+
+    def set_theme(self, theme_key):
+        """外部切换主题入口。"""
+        self.palette = get_palette(theme_key)
+        self._apply_theme()
 
     def _apply_sizing(self):
         """根据当前屏幕的任务栏高度，用逻辑像素设置窗口和控件尺寸"""
@@ -318,14 +396,15 @@ class PomodoroWindow(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         rect = self.rect()
 
-        # 主背景渐变
+        # 主背景渐变（取当前主题配色）
+        p = self.palette
         gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         if self.is_work_mode:
-            gradient.setColorAt(0, QColor(26, 26, 36, 175))
-            gradient.setColorAt(1, QColor(20, 20, 30, 185))
+            gradient.setColorAt(0, QColor(*p['bg_top']))
+            gradient.setColorAt(1, QColor(*p['bg_bottom']))
         else:
-            gradient.setColorAt(0, QColor(20, 36, 28, 175))
-            gradient.setColorAt(1, QColor(16, 30, 24, 185))
+            gradient.setColorAt(0, QColor(*p['bg_top_break']))
+            gradient.setColorAt(1, QColor(*p['bg_bottom_break']))
 
         painter.setBrush(QBrush(gradient))
         painter.setPen(Qt.NoPen)
@@ -334,44 +413,45 @@ class PomodoroWindow(QWidget):
         # 顶部高光（玻璃质感）
         highlight_rect = rect.adjusted(1, 1, -1, -rect.height() // 2)
         highlight = QLinearGradient(highlight_rect.topLeft(), highlight_rect.bottomLeft())
-        highlight.setColorAt(0, QColor(255, 255, 255, 18))
-        highlight.setColorAt(1, QColor(255, 255, 255, 0))
+        highlight.setColorAt(0, QColor(*p['highlight']))
+        highlight.setColorAt(1, QColor(*p['highlight_end']))
         painter.setBrush(QBrush(highlight))
         painter.drawRoundedRect(rect, 8, 8)
 
         # 细边框
-        border_pen = QPen(QColor(255, 255, 255, 12), 1)
+        border_pen = QPen(QColor(*p['border']), 1)
         painter.setPen(border_pen)
         painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 8, 8)
 
     # ── 右键菜单 ──────────────────────────────────────────────────
     def contextMenuEvent(self, event):
-        menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu {
-                background-color: #1a1a28;
-                color: #e0e0e8;
-                border: 1px solid #2e2e44;
+        menu = _TopmostMenu(self)
+        p = self.palette
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background-color: {p['menu_bg']};
+                color: {p['menu_text']};
+                border: 1px solid {p['menu_border']};
                 border-radius: 8px;
                 padding: 6px;
-            }
-            QMenu::item {
+            }}
+            QMenu::item {{
                 padding: 6px 28px;
                 border-radius: 4px;
                 font-size: 13px;
-            }
-            QMenu::item:selected {
-                background-color: #2e2e44;
-            }
-            QMenu::separator {
+            }}
+            QMenu::item:selected {{
+                background-color: {p['menu_sel']};
+            }}
+            QMenu::separator {{
                 height: 1px;
-                background-color: #2e2e44;
+                background-color: {p['menu_sep']};
                 margin: 4px 10px;
-            }
-            QMenu::indicator {
+            }}
+            QMenu::indicator {{
                 width: 16px;
-            }
+            }}
         """)
 
         is_running = (self.start_btn.text() == "⏸")
@@ -520,6 +600,11 @@ class ProgressRing(QWidget):
         super().__init__()
         self.progress = 0.0
         self.is_work_mode = True
+        self.palette = get_palette('deep_space')
+
+    def set_palette(self, palette):
+        self.palette = palette
+        self.update()
 
     def update_progress(self, progress, is_work_mode):
         self.progress = progress
@@ -544,19 +629,20 @@ class ProgressRing(QWidget):
         radius = side // 2 - pen_width - 1
         inner_radius = max(2, radius - pen_width - 2)
 
-        # 背景圆环
-        bg_pen = QPen(QColor(255, 255, 255, 35), pen_width)
+        # 背景圆环（主题配色）
+        p = self.palette
+        bg_pen = QPen(QColor(*p['ring_bg']), pen_width)
         painter.setPen(bg_pen)
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(center, radius, radius)
 
-        # 进度圆环：工作=暖红渐变，休息=翠绿渐变
+        # 进度圆环：工作/休息各用主题的渐变色
         if self.is_work_mode:
-            color1 = QColor(255, 95, 75)
-            color2 = QColor(255, 160, 110)
+            color1 = QColor(*p['ring_work1'])
+            color2 = QColor(*p['ring_work2'])
         else:
-            color1 = QColor(70, 210, 150)
-            color2 = QColor(120, 230, 180)
+            color1 = QColor(*p['ring_break1'])
+            color2 = QColor(*p['ring_break2'])
 
         gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
         gradient.setColorAt(0, color1)
@@ -577,14 +663,14 @@ class ProgressRing(QWidget):
             span_angle
         )
 
-        # 内圈装饰
+        # 内圈装饰（主题配色）
         inner_gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
         if self.is_work_mode:
-            inner_gradient.setColorAt(0, QColor(255, 95, 75, 22))
-            inner_gradient.setColorAt(1, QColor(255, 160, 110, 35))
+            inner_gradient.setColorAt(0, QColor(*p['ring_inner_work1']))
+            inner_gradient.setColorAt(1, QColor(*p['ring_inner_work2']))
         else:
-            inner_gradient.setColorAt(0, QColor(70, 210, 150, 22))
-            inner_gradient.setColorAt(1, QColor(120, 230, 180, 35))
+            inner_gradient.setColorAt(0, QColor(*p['ring_inner_break1']))
+            inner_gradient.setColorAt(1, QColor(*p['ring_inner_break2']))
 
         painter.setBrush(QBrush(inner_gradient))
         painter.setPen(Qt.NoPen)

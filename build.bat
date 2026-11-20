@@ -6,7 +6,9 @@ python -m PyInstaller ^
     --onefile ^
     --windowed ^
     --name "PomodoroTaskbar" ^
+    --icon "assets/app.ico" ^
     --add-data "sound;sound" ^
+    --add-data "assets;assets" ^
     --exclude-module=pygame ^
     --exclude-module=numpy ^
     --exclude-module=scipy ^
