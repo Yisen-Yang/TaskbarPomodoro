@@ -113,10 +113,19 @@ build.bat
 ├── history_dialog.py    # 历史记录对话框
 ├── sound/               # 内置提示音（1.wav / 2.wav）
 ├── docs/images/         # README 配图及其生成脚本
+├── tests/               # 计时状态机单元测试
 ├── requirements.txt
 ├── build.bat
 └── README.md
 ```
+
+### 运行测试
+
+```bash
+python -m unittest tests.test_timer_logic
+```
+
+测试覆盖初始状态、时长切换、长休息间隔、计时防漂移、暂停续接等核心逻辑。
 
 ## 注意事项
 
