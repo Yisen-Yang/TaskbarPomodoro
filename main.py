@@ -1,0 +1,373 @@
+import sys
+import os
+import ctypes
+
+from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QFont
+
+from appbar_window import PomodoroWindow
+from timer_logic import PomodoroTimer, TimerMode, TimerState
+from settings import SettingsManager, SettingsDialog
+from tray_icon import TrayIcon
+from history_manager import HistoryManager
+from history_dialog import HistoryDialog
+
+
+def get_sound_path(filename):
+    """获取音效文件路径，同时兼容开发环境和打包后的 EXE"""
+    if getattr(sys, 'frozen', False):
+        base = sys._MEIPASS
+    else:
+        base = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base, 'sound', filename)
+
+
+# ── Windows MCI 音频播放（零外部依赖）────────────────────────────
+_mci = ctypes.windll.winmm
+_mci.mciSendStringW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_void_p]
+_mci.mciSendStringW.restype = ctypes.c_long
+
+
+class PomodoroApp:
+    def __init__(self):
+        self.settings_manager = SettingsManager()
+        self.history_manager = HistoryManager()
+        self.timer = PomodoroTimer()
+        self.window = None
+        self.tray_icon = None
+        self.settings_dialog = None
+        self.history_dialog = None
+        self.current_total_seconds = 25 * 60
+
+        self.setup_timer()
+
+    def setup_timer(self):
+        work_minutes = self.settings_manager.get('work_minutes')
+        break_minutes = self.settings_manager.get('break_minutes')
+
+        self.timer.set_work_minutes(work_minutes)
+        self.timer.set_break_minutes(break_minutes)
+
+        self.current_total_seconds = work_minutes * 60
+
+        self.timer.time_updated.connect(self.on_time_updated)
+        self.timer.state_changed.connect(self.on_state_changed)
+        self.timer.mode_changed.connect(self.on_mode_changed)
+        self.timer.timer_completed.connect(self.on_timer_completed)
+
+    def create_window(self):
+        self.window = PomodoroWindow(self.settings_manager)
+
+        self.window.start_pause_clicked.connect(self.on_start_pause)
+        self.window.reset_clicked.connect(self.on_reset)
+        self.window.preset_changed.connect(self.on_preset_changed)
+
+        # 右键菜单信号
+        self.window.settings_requested.connect(self.on_settings)
+        self.window.stats_requested.connect(self.on_today_stats)
+        self.window.continuous_focus_toggled.connect(self.on_continuous_focus_toggled)
+        self.window.hide_requested.connect(self.on_toggle_window)
+        self.window.exit_requested.connect(self.on_exit)
+
+        # 同步预设下拉框
+        work = self.settings_manager.get('work_minutes')
+        brk = self.settings_manager.get('break_minutes')
+        self.window.update_preset_from_settings(work, brk)
+
+        minutes, seconds = self.timer.get_remaining_time()
+        self.window.update_time_display(minutes, seconds)
+        self.window.update_progress(self.current_total_seconds, self.current_total_seconds)
+
+        self.window.show()
+
+    def create_tray_icon(self):
+        self.tray_icon = TrayIcon()
+        self.tray_icon.activated.connect(self.on_tray_activated)
+        self.tray_icon.start_requested.connect(self.on_start)
+        self.tray_icon.pause_requested.connect(self.on_pause)
+        self.tray_icon.reset_requested.connect(self.on_reset)
+        self.tray_icon.settings_requested.connect(self.on_settings)
+        self.tray_icon.history_requested.connect(self.on_history)
+        self.tray_icon.today_stats_requested.connect(self.on_today_stats)
+        self.tray_icon.continuous_focus_toggled.connect(self.on_continuous_focus_toggled)
+        self.tray_icon.toggle_window_requested.connect(self.on_toggle_window)
+        self.tray_icon.exit_requested.connect(self.on_exit)
+
+        # 同步连续专注初始状态
+        continuous = self.settings_manager.get('continuous_focus')
+        self.tray_icon.update_continuous_focus(continuous)
+
+    # ── 计时器回调 ────────────────────────────────────────────────
+    def on_time_updated(self, minutes, seconds):
+        if self.window:
+            self.window.update_time_display(minutes, seconds)
+            remaining = minutes * 60 + seconds
+            self.window.update_progress(remaining, self.current_total_seconds)
+
+    def on_state_changed(self, state):
+        if self.window:
+            self.window.set_running_state(state == TimerState.RUNNING)
+        if self.tray_icon:
+            self.tray_icon.update_state(state == TimerState.RUNNING)
+
+    def on_mode_changed(self, mode):
+        if self.window:
+            self.window.set_mode(mode == TimerMode.WORK)
+
+        if mode == TimerMode.WORK:
+            self.current_total_seconds = self.timer.work_minutes * 60
+        else:
+            self.current_total_seconds = self.timer.break_minutes * 60
+
+        minutes, seconds = self.timer.get_remaining_time()
+        self.on_time_updated(minutes, seconds)
+
+    def on_timer_completed(self, mode):
+        # 记录历史
+        mode_str = 'work' if mode == TimerMode.WORK else 'break'
+        duration = self.timer.work_minutes if mode == TimerMode.WORK else self.timer.break_minutes
+        try:
+            self.history_manager.add_record(mode_str, duration)
+        except Exception:
+            pass
+
+        # 音效逻辑
+        # 专注结束 → 播放 2.mp3
+        # 休息结束 + 连续专注 → 播放 1.mp3（下一轮开始）
+        # 休息结束 + 非连续专注 → 不播放
+        continuous = self.settings_manager.get('continuous_focus')
+
+        if self.settings_manager.get('sound_enabled'):
+            if mode == TimerMode.WORK:
+                self.play_sound_file(2)
+            elif mode == TimerMode.BREAK and continuous:
+                self.play_sound_file(1)
+
+        # 通知（加 try/except 防止阻断后续自动切换）
+        try:
+            self.show_notification(mode)
+        except Exception:
+            pass
+
+        if mode == TimerMode.WORK:
+            # 工作→休息：始终自动开始
+            self.timer.switch_mode(TimerMode.BREAK)
+            self.timer.start()
+        else:
+            # 休息→工作
+            self.timer.switch_mode(TimerMode.WORK)
+            if continuous:
+                self.timer.start()
+            # 非连续：回到 idle 初始状态
+
+    # ── 声音 / 通知 ──────────────────────────────────────────────
+    def play_sound_file(self, file_num):
+        """通过 Windows MCI 播放 MP3：1=开始音效，2=结束音效"""
+        try:
+            path = get_sound_path(f"{file_num}.mp3")
+            if not os.path.exists(path):
+                return
+            # 关闭上一段播放
+            _mci.mciSendStringW('close bgm', None, 0, None)
+            # 打开并播放
+            _mci.mciSendStringW(f'open "{path}" type mpegvideo alias bgm', None, 0, None)
+            _mci.mciSendStringW('play bgm', None, 0, None)
+            # 10 秒后自动关闭（音效文件很短，足够播完）
+            QTimer.singleShot(10000, lambda: _mci.mciSendStringW('close bgm', None, 0, None))
+        except Exception:
+            pass
+
+    def show_notification(self, mode):
+        if mode == TimerMode.WORK:
+            title = "工作时间结束！"
+            message = "休息一下吧！" if not self.settings_manager.get('continuous_focus') else "休息一下吧！连续专注中..."
+        else:
+            title = "休息时间结束！"
+            if self.settings_manager.get('continuous_focus'):
+                message = "准备开始下一轮工作！"
+            else:
+                message = "准备开始工作！"
+
+        if self.tray_icon:
+            self.tray_icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 3000)
+
+    # ── 按钮事件 ──────────────────────────────────────────────────
+    def on_start_pause(self):
+        was_idle = (self.timer.get_state() == TimerState.IDLE)
+        self.timer.toggle()
+        # 从 IDLE 开始工作模式时播放开始音效
+        if was_idle and self.timer.is_running() and self.timer.get_mode() == TimerMode.WORK:
+            if self.settings_manager.get('sound_enabled'):
+                self.play_sound_file(1)
+
+    def on_reset(self):
+        self.timer.reset()
+
+    def on_start(self):
+        was_idle = (self.timer.get_state() == TimerState.IDLE)
+        self.timer.start()
+        if was_idle and self.timer.get_mode() == TimerMode.WORK:
+            if self.settings_manager.get('sound_enabled'):
+                self.play_sound_file(1)
+
+    def on_pause(self):
+        self.timer.pause()
+
+    # ── 预设切换 ──────────────────────────────────────────────────
+    def on_preset_changed(self, text):
+        presets = {
+            "5/1": (5, 1), "15/5": (15, 5),
+            "25/5": (25, 5), "30/5": (30, 5)
+        }
+
+        if text in presets:
+            work, break_time = presets[text]
+            self.settings_manager.set('work_minutes', work)
+            self.settings_manager.set('break_minutes', break_time)
+
+            self.timer.set_work_minutes(work)
+            self.timer.set_break_minutes(break_time)
+
+            # 关键：更新 current_total_seconds 以保证圆环比例正确
+            if self.timer.get_mode() == TimerMode.WORK:
+                self.current_total_seconds = work * 60
+            else:
+                self.current_total_seconds = break_time * 60
+
+            self.timer.reset()
+
+    # ── 设置 ──────────────────────────────────────────────────────
+    def on_settings(self):
+        # 暂停 topmost timer，防止 50ms 刷新导致对话框闪动
+        if self.window:
+            self.window.topmost_timer.stop()
+
+        self.settings_dialog = SettingsDialog(self.settings_manager)
+        self.settings_dialog.settings_changed.connect(self.on_settings_changed)
+        self.settings_dialog.exec()
+
+        if self.window:
+            self.window.topmost_timer.start()
+
+    def on_settings_changed(self):
+        work_minutes = self.settings_manager.get('work_minutes')
+        break_minutes = self.settings_manager.get('break_minutes')
+
+        self.timer.set_work_minutes(work_minutes)
+        self.timer.set_break_minutes(break_minutes)
+
+        # 关键修复：更新 current_total_seconds，否则圆环比例错误
+        if self.timer.get_mode() == TimerMode.WORK:
+            self.current_total_seconds = work_minutes * 60
+        else:
+            self.current_total_seconds = break_minutes * 60
+
+        # 始终重置：让界面显示新设定的时间
+        self.timer.reset()
+
+        # 更新窗口显示
+        if self.window:
+            minutes, seconds = self.timer.get_remaining_time()
+            self.window.update_time_display(minutes, seconds)
+            self.window.update_progress(
+                minutes * 60 + seconds,
+                self.current_total_seconds
+            )
+            # 同步预设下拉框
+            self.window.update_preset_from_settings(work_minutes, break_minutes)
+
+        # 同步连续专注菜单状态
+        continuous = self.settings_manager.get('continuous_focus')
+        if self.tray_icon:
+            self.tray_icon.update_continuous_focus(continuous)
+
+    # ── 连续专注切换 ──────────────────────────────────────────────
+    def on_continuous_focus_toggled(self, checked):
+        self.settings_manager.set('continuous_focus', checked)
+        # 同步两个菜单的显示状态
+        if self.tray_icon:
+            self.tray_icon.update_continuous_focus(checked)
+
+    # ── 今日统计 ──────────────────────────────────────────────────
+    def on_today_stats(self):
+        if self.window:
+            self.window.topmost_timer.stop()
+
+        today_count = self.history_manager.get_today_pomodoros()
+        today_work = self.history_manager.get_today_work_minutes()
+        today_break = self.history_manager.get_today_break_minutes()
+        total_work = self.history_manager.get_total_work_minutes()
+
+        msg = QMessageBox()
+        msg.setWindowTitle("今日统计")
+        msg.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
+        msg.setIcon(QMessageBox.Information)
+        msg.setText(
+            f"🍅 今日专注：{today_work} 分钟\n"
+            f"✅ 完成番茄钟：{today_count} 次\n"
+            f"☕ 今日休息：{today_break} 分钟\n"
+            f"📊 累计专注：{total_work} 分钟"
+        )
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec()
+
+        if self.window:
+            self.window.topmost_timer.start()
+
+    # ── 历史记录 ──────────────────────────────────────────────────
+    def on_history(self):
+        if self.window:
+            self.window.topmost_timer.stop()
+
+        self.history_dialog = HistoryDialog(self.history_manager)
+        self.history_dialog.setWindowFlags(
+            self.history_dialog.windowFlags() | Qt.WindowStaysOnTopHint
+        )
+        self.history_dialog.exec()
+
+        if self.window:
+            self.window.topmost_timer.start()
+
+    # ── 窗口显隐 ──────────────────────────────────────────────────
+    def on_toggle_window(self):
+        if self.window:
+            if self.window.isVisible():
+                self.window.hide()
+                if self.tray_icon:
+                    self.tray_icon.toggle_window_action.setText("显示窗口")
+            else:
+                self.window.show()
+                if self.tray_icon:
+                    self.tray_icon.toggle_window_action.setText("隐藏窗口")
+
+    def on_tray_activated(self, reason):
+        if reason == QSystemTrayIcon.DoubleClick:
+            self.on_start_pause()
+
+    def on_exit(self):
+        if self.window:
+            self.window.save_position()
+            self.window.close()
+        QApplication.quit()
+
+
+def main():
+    QApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+    )
+    app = QApplication(sys.argv)
+    app.setQuitOnLastWindowClosed(False)
+
+    font = QFont("Segoe UI", 9)
+    app.setFont(font)
+
+    pomodoro = PomodoroApp()
+    pomodoro.create_window()
+    pomodoro.create_tray_icon()
+
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()
