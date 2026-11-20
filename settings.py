@@ -19,6 +19,8 @@ class SettingsManager:
         self.settings = {
             'work_minutes': 25,
             'break_minutes': 5,
+            'long_break_minutes': 15,
+            'long_break_interval': 4,
             'auto_start': False,
             'sound_enabled': True,
             'auto_start_on_windows': False,
@@ -185,12 +187,28 @@ class SettingsDialog(QDialog):
         time_layout.addLayout(work_layout)
 
         break_layout = QHBoxLayout()
-        break_layout.addWidget(QLabel("休息时长 (分钟):"))
+        break_layout.addWidget(QLabel("短休息时长 (分钟):"))
         self.break_spin = QSpinBox()
         self.break_spin.setRange(1, 90)
         self.break_spin.setValue(self.settings_manager.get('break_minutes'))
         break_layout.addWidget(self.break_spin)
         time_layout.addLayout(break_layout)
+
+        long_break_layout = QHBoxLayout()
+        long_break_layout.addWidget(QLabel("长休息时长 (分钟):"))
+        self.long_break_spin = QSpinBox()
+        self.long_break_spin.setRange(1, 120)
+        self.long_break_spin.setValue(self.settings_manager.get('long_break_minutes'))
+        long_break_layout.addWidget(self.long_break_spin)
+        time_layout.addLayout(long_break_layout)
+
+        interval_layout = QHBoxLayout()
+        interval_layout.addWidget(QLabel("每几个番茄长休息:"))
+        self.interval_spin = QSpinBox()
+        self.interval_spin.setRange(2, 10)
+        self.interval_spin.setValue(self.settings_manager.get('long_break_interval'))
+        interval_layout.addWidget(self.interval_spin)
+        time_layout.addLayout(interval_layout)
 
         layout.addWidget(time_group)
 
@@ -210,7 +228,7 @@ class SettingsDialog(QDialog):
         sound_layout = QVBoxLayout(sound_group)
         sound_layout.setSpacing(8)
 
-        self.sound_check = QCheckBox("启用声音提示（开始播放 1.mp3，专注结束播放 2.mp3）")
+        self.sound_check = QCheckBox("启用声音提示（内置提示音，可在 sound 目录自定义 1.mp3/2.mp3）")
         self.sound_check.setChecked(self.settings_manager.get('sound_enabled'))
         sound_layout.addWidget(self.sound_check)
 
@@ -245,6 +263,8 @@ class SettingsDialog(QDialog):
     def accept(self):
         self.settings_manager.set('work_minutes', self.work_spin.value())
         self.settings_manager.set('break_minutes', self.break_spin.value())
+        self.settings_manager.set('long_break_minutes', self.long_break_spin.value())
+        self.settings_manager.set('long_break_interval', self.interval_spin.value())
         self.settings_manager.set('continuous_focus', self.continuous_check.isChecked())
         self.settings_manager.set('sound_enabled', self.sound_check.isChecked())
         self.settings_manager.set('auto_start_on_windows', self.auto_start_check.isChecked())
