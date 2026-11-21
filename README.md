@@ -4,7 +4,7 @@
 
 **常驻任务栏的极简番茄工作法工具 —— 专注与休息，抬眼即见。**
 
-基于 PySide6 + Win32 API，仅 Windows 可用。窗口覆盖在任务栏上方、始终置顶、可自由拖动定位。
+基于 PySide6，跨平台支持 **Windows / macOS / Linux**。Windows 常驻任务栏上方，macOS 常驻顶部菜单栏（显示倒计时），Linux 为置顶小窗 / AppImage。
 
 [![Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -60,20 +60,25 @@ python main.py
 
 ### 方式二：下载现成版本（推荐）
 
-从 [Releases](../../releases) 下载，有两个版本：
+从 [Releases](../../releases) 下载对应平台的安装包，均无需 Python 环境：
 
-- **安装版** `PomodoroTaskbar_安装版_vX.X.X.exe`：双击安装到用户目录，自动建快捷方式，**无需管理员权限**，可卸载
-- **绿色版** `PomodoroTaskbar_绿色版_vX.X.X.zip`：解压即用，删除文件夹即卸载
+| 平台 | 文件 | 说明 |
+|------|------|------|
+| Windows | `PomodoroTaskbar_安装版_vX.X.X.exe` | 双击安装到用户目录，自动建快捷方式，无需管理员权限，可卸载 |
+| Windows | `PomodoroTaskbar_绿色版_vX.X.X.zip` | 解压即用，删除文件夹即卸载（内含番茄图标原图） |
+| macOS | `PomodoroTaskbar_macOS.zip` | 解压得到 `.app`，拖进「应用程序」即可；菜单栏常驻显示倒计时 |
+| Linux | `PomodoroTaskbar_Linux_x86_64.AppImage` | 赋可执行权限后双击运行，免安装、跨发行版 |
 
-均无需 Python 环境。仅支持 Windows 10 / 11。
+> macOS 首次打开：因未做开发者签名，需在「访达」中右键 → 打开（或系统设置 → 隐私与安全性 → 仍要打开）。
 
-### 打包为 EXE
+### 打包
 
-```bat
-build.bat
+```bash
+python build_all.py     # 跨平台（Win/Mac/Linux 通用）
+build.bat               # Windows 专用
 ```
 
-产物位于 `dist/PomodoroTaskbar.exe`（约 44MB）。`build.bat` 内含精简参数，剔除 PySide6 中未使用的 WebEngine、QML、3D、Charts 等模块以控制体积。
+产物位于 `dist/`。构建脚本剔除了 PySide6 中未使用的 WebEngine、QML、3D、Charts 等模块以控制体积。三平台安装包由 GitHub Actions 在推送 `v*` 标签时自动构建并发布到 Releases。
 
 ## 使用说明
 
@@ -109,10 +114,11 @@ build.bat
 
 ## 技术栈
 
-- **PySide6**：GUI 框架（仅用 QtWidgets / QtCore / QtGui）
-- **Win32 API**（`ctypes`）：`SetWindowPos` 置顶、扩展窗口样式、任务栏高度计算
-- **Windows MCI**（`winmm.mciSendStringW`）：零依赖播放 WAV / MP3
-- **PyInstaller**：单文件 EXE 打包
+- **PySide6**：跨平台 GUI 框架（仅用 QtWidgets / QtCore / QtGui）
+- **platform_utils.py**：平台差异统一层 —— 置顶（Win32 / Qt 原生）、音效（MCI / afplay / paplay）、开机自启（注册表 / launchd / XDG）
+- **Win32 API**（仅 Windows，`ctypes`）：`SetWindowPos` 置顶、扩展窗口样式、任务栏高度计算
+- **PyInstaller**：三平台打包（Windows EXE / macOS .app / Linux ELF→AppImage）
+- **GitHub Actions**：推送 `v*` 标签时自动构建三平台安装包并发布到 Releases
 
 ## 项目结构
 
@@ -120,6 +126,7 @@ build.bat
 .
 ├── main.py              # 入口、应用逻辑、音效与通知
 ├── app_icon.py          # 全局唯一番茄图标源（窗口/托盘/对话框统一）
+├── platform_utils.py    # 平台差异层：置顶/音效/开机自启（三平台）
 ├── appbar_window.py     # 任务栏窗口、进度环、拖动/置顶/跨屏自适应
 ├── timer_logic.py       # 计时状态机（单调时钟 + 长休息）
 ├── settings.py          # 设置管理与设置对话框
@@ -130,11 +137,14 @@ build.bat
 ├── sounds.py            # 14 种音效注册表
 ├── sound/               # 提示音文件（合成 WAV + mixkit MP3）
 ├── assets/              # 番茄闹钟图标（app.ico / tomato.png / 原始图留档）
-├── installer.iss        # Inno Setup 安装版脚本（免管理员）
+├── installer.iss        # Inno Setup 安装版脚本（免管理员，Windows）
+├── build_all.py         # 跨平台打包脚本（Win/Mac/Linux 通用）
+├── build.bat            # Windows 专用打包脚本
+├── .github/workflows/   # GitHub Actions 三平台自动构建配置
+│   └── release.yml
 ├── docs/images/         # README 配图及其生成脚本
 ├── tests/               # 计时状态机单元测试
 ├── requirements.txt
-├── build.bat
 └── README.md
 ```
 
@@ -148,11 +158,12 @@ python -m unittest tests.test_timer_logic
 
 ## 注意事项
 
-- 仅支持 **Windows 10 / 11**
-- 置顶依赖 Win32 `SetWindowPos(HWND_TOPMOST)`，因此任务栏窗口会浮于其他窗口之上（这是设计目的）
-- 音效通过 Windows 系统 MCI 播放，无需安装 pygame 或其他音频库
+- **Windows 10 / 11**：窗口常驻任务栏上方，置顶依赖 Win32 `SetWindowPos(HWND_TOPMOST)`
+- **macOS**：常驻顶部菜单栏显示倒计时，点菜单可展开；未做开发者签名，首次需右键打开
+- **Linux**：推荐 AppImage；需系统有 `paplay`/`aplay` 之一播放提示音（多数发行版自带）
+- 音效零第三方依赖：Windows 用系统 MCI，macOS 用 `afplay`，Linux 用 `paplay`/`aplay`
 - 6 种 mixkit 音效可用于个人/商业项目，但**不可将音频文件单独再分发/转售**
-- 设置与历史存于 `%APPDATA%`，换电脑不会带走；绿色版卸载时可一并删除
+- 设置与历史存于本机用户目录（Win: `%APPDATA%` / Mac: `~/Library/Application Support` / Linux: `~/.config`），换电脑不会带走
 
 ## License
 

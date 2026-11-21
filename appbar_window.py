@@ -1,6 +1,6 @@
-import ctypes
 import sys
-from ctypes import wintypes
+import os
+import platform
 
 from PySide6.QtWidgets import (
     QWidget, QLabel, QPushButton, QComboBox,
@@ -11,64 +11,71 @@ from PySide6.QtGui import (
     QFont, QColor, QPainter, QPen, QBrush, QLinearGradient,
     QGuiApplication, QAction, QIcon
 )
-import os
 
 from theme import get_palette
 from app_icon import get_app_icon
 
-user32 = ctypes.windll.user32
-shell32 = ctypes.windll.shell32
+IS_WIN = platform.system() == 'Windows'
 
 
 def _app_icon():
     """兼容旧调用：统一使用全局番茄图标。"""
     return get_app_icon()
 
-# ── Windows API constants ──────────────────────────────────────────
-SWP_NOMOVE = 0x0002
-SWP_NOSIZE = 0x0001
-SWP_NOACTIVATE = 0x0010
-SWP_SHOWWINDOW = 0x0040
-SWP_FRAMECHANGED = 0x0020
 
-GWL_EXSTYLE = -20
-WS_EX_TOPMOST = 0x00000008
-WS_EX_TOOLWINDOW = 0x00000080
-WS_EX_NOACTIVATE = 0x08000000
-WS_EX_LAYERED = 0x00080000
+# ── Windows API（仅在 Windows 上加载，Mac/Linux 下全部为 None）──
+if IS_WIN:
+    import ctypes
+    from ctypes import wintypes
 
-HWND_TOPMOST = -1
-HWND_NOTOPMOST = -2
+    user32 = ctypes.windll.user32
+    shell32 = ctypes.windll.shell32
 
+    SWP_NOMOVE = 0x0002
+    SWP_NOSIZE = 0x0001
+    SWP_NOACTIVATE = 0x0010
+    SWP_SHOWWINDOW = 0x0040
+    SWP_FRAMECHANGED = 0x0020
 
-class RECT(ctypes.Structure):
-    _fields_ = [
-        ("left", wintypes.LONG),
-        ("top", wintypes.LONG),
-        ("right", wintypes.LONG),
-        ("bottom", wintypes.LONG),
+    GWL_EXSTYLE = -20
+    WS_EX_TOPMOST = 0x00000008
+    WS_EX_TOOLWINDOW = 0x00000080
+    WS_EX_NOACTIVATE = 0x08000000
+    WS_EX_LAYERED = 0x00080000
+
+    HWND_TOPMOST = -1
+    HWND_NOTOPMOST = -2
+
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", wintypes.LONG),
+            ("top", wintypes.LONG),
+            ("right", wintypes.LONG),
+            ("bottom", wintypes.LONG),
+        ]
+
+    # 64位兼容：设置函数签名
+    user32.SetWindowPos.restype = wintypes.BOOL
+    user32.SetWindowPos.argtypes = [
+        wintypes.HWND, wintypes.HWND,
+        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        wintypes.UINT
     ]
-
-
-# ── 64位兼容：设置函数签名 ──────────────────────────────────────
-user32.SetWindowPos.restype = wintypes.BOOL
-user32.SetWindowPos.argtypes = [
-    wintypes.HWND, wintypes.HWND,
-    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
-    wintypes.UINT
-]
-user32.GetWindowLongW.restype = wintypes.LONG
-user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
-user32.SetWindowLongW.restype = wintypes.LONG
-user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
-user32.FindWindowW.restype = wintypes.HWND
-user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
-user32.GetWindowRect.restype = wintypes.BOOL
-user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
-user32.BringWindowToTop.restype = wintypes.BOOL
-user32.BringWindowToTop.argtypes = [wintypes.HWND]
-user32.GetForegroundWindow.restype = wintypes.HWND
-user32.GetForegroundWindow.argtypes = []
+    user32.GetWindowLongW.restype = wintypes.LONG
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.SetWindowLongW.restype = wintypes.LONG
+    user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+    user32.FindWindowW.restype = wintypes.HWND
+    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+    user32.GetWindowRect.restype = wintypes.BOOL
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+    user32.BringWindowToTop.restype = wintypes.BOOL
+    user32.BringWindowToTop.argtypes = [wintypes.HWND]
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetForegroundWindow.argtypes = []
+else:
+    user32 = None
+    shell32 = None
 
 
 class _TopmostComboBox(QComboBox):
@@ -83,6 +90,8 @@ class _TopmostComboBox(QComboBox):
         if host is not None and host.topmost_timer.isActive():
             host.topmost_timer.stop()
         super().showPopup()
+        if not IS_WIN:
+            return
         # 不改 windowFlags（会重建弹出层）；仅 Win32 TOPMOST 压过宿主覆盖窗
         try:
             popup = self.view().window()
@@ -125,7 +134,8 @@ class _TopmostMenu(QMenu):
         host = self._host
         if host is not None and host.topmost_timer.isActive():
             host.topmost_timer.stop()
-        self._pin_timer.start()
+        if IS_WIN:
+            self._pin_timer.start()
         try:
             return super().exec(*args, **kwargs)
         finally:
@@ -135,6 +145,8 @@ class _TopmostMenu(QMenu):
 
     # PySide6 的 QMenu.exec(pos) 与 exec() 都存在，统一别名
     def _pin_self(self):
+        if not IS_WIN:
+            return
         try:
             hwnd = int(self.winId())
             if hwnd:
@@ -325,11 +337,13 @@ class PomodoroWindow(QWidget):
         self._apply_sizing()
 
     def _resume_topmost_if_needed(self):
-        if self.isVisible() and not self.topmost_timer.isActive():
+        if IS_WIN and self.isVisible() and not self.topmost_timer.isActive():
             self.topmost_timer.start()
 
-    # ── Windows topmost ────────────────────────────────────────────
+    # ── 置顶（Windows 用 Win32 强制置顶，Mac/Linux 用 Qt 原生 hint）──
     def _apply_windows_topmost_style(self):
+        if not IS_WIN:
+            return
         hwnd = int(self.winId())
         if not hwnd:
             return
@@ -355,6 +369,16 @@ class PomodoroWindow(QWidget):
             self._screen_changed_connected = True
 
     def set_window_topmost(self, topmost):
+        if not IS_WIN:
+            # macOS / Linux：Qt 原生置顶，无需 50ms 定时器
+            flags = self.windowFlags()
+            if topmost:
+                self.setWindowFlags(flags | Qt.WindowStaysOnTopHint)
+            else:
+                self.setWindowFlags(flags & ~Qt.WindowStaysOnTopHint)
+            if self.isVisible():
+                self.show()  # 改 flags 后需重新 show 才生效
+            return
         hwnd = int(self.winId())
         if not hwnd:
             return
@@ -375,6 +399,8 @@ class PomodoroWindow(QWidget):
                 self.topmost_timer.stop()
 
     def on_topmost_timeout(self):
+        if not IS_WIN:
+            return
         if self.isVisible():
             hwnd = int(self.winId())
             if hwnd:

@@ -1,6 +1,5 @@
 import sys
 import os
-import ctypes
 
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 from PySide6.QtCore import Qt, QTimer
@@ -13,6 +12,7 @@ from settings import SettingsManager, SettingsDialog
 from tray_icon import TrayIcon
 from history_manager import HistoryManager
 from history_dialog import HistoryDialog
+from platform_utils import play_sound_file, IS_MAC, IS_LINUX
 import sounds
 
 
@@ -42,12 +42,6 @@ def resolve_sound_key(key):
     if os.path.exists(path):
         return path, ftype
     return None, None
-
-
-# ── Windows MCI 音频播放（零外部依赖）────────────────────────────
-_mci = ctypes.windll.winmm
-_mci.mciSendStringW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint, ctypes.c_void_p]
-_mci.mciSendStringW.restype = ctypes.c_long
 
 
 class PomodoroApp:
@@ -104,7 +98,14 @@ class PomodoroApp:
         self.window.update_time_display(minutes, seconds)
         self.window.update_progress(self.current_total_seconds, self.current_total_seconds)
 
-        self.window.show()
+        # macOS：以顶部菜单栏为主，默认隐藏浮动窗口（点菜单『显示窗口』才弹出）
+        if IS_MAC:
+            if getattr(self, '_mac_window_hidden', None) is None:
+                self._mac_window_hidden = True
+            if not self._mac_window_hidden:
+                self.window.show()
+        else:
+            self.window.show()
 
     def create_tray_icon(self):
         self.tray_icon = TrayIcon()
@@ -123,12 +124,18 @@ class PomodoroApp:
         continuous = self.settings_manager.get('continuous_focus')
         self.tray_icon.update_continuous_focus(continuous)
 
+        # macOS：窗口默认隐藏，托盘菜单文字改为『显示窗口』
+        if IS_MAC and getattr(self, '_mac_window_hidden', False):
+            self.tray_icon.toggle_window_action.setText("显示窗口")
+
     # ── 计时器回调 ────────────────────────────────────────────────
     def on_time_updated(self, minutes, seconds):
         if self.window:
             self.window.update_time_display(minutes, seconds)
             remaining = minutes * 60 + seconds
             self.window.update_progress(remaining, self.current_total_seconds)
+        if self.tray_icon:
+            self.tray_icon.update_countdown(f"{minutes:02d}:{seconds:02d}")
 
     def on_state_changed(self, state):
         if self.window:
@@ -199,17 +206,14 @@ class PomodoroApp:
 
     # ── 声音 / 通知 ──────────────────────────────────────────────
     def play_sound(self, kind):
-        """通过 Windows MCI 播放提示音。
+        """跨平台播放提示音。
         kind='start' 用设置里的开始音效，'end' 用结束音效。"""
         try:
             key = self.settings_manager.get(f'{kind}_sound')
             path, mci_type = resolve_sound_key(key)
             if not path:
                 return
-            _mci.mciSendStringW('close bgm', None, 0, None)
-            _mci.mciSendStringW(f'open "{path}" type {mci_type} alias bgm', None, 0, None)
-            _mci.mciSendStringW('play bgm', None, 0, None)
-            QTimer.singleShot(10000, lambda: _mci.mciSendStringW('close bgm', None, 0, None))
+            play_sound_file(path, mci_type)
         except Exception:
             pass
 
@@ -389,10 +393,12 @@ class PomodoroApp:
         if self.window:
             if self.window.isVisible():
                 self.window.hide()
+                self._mac_window_hidden = True
                 if self.tray_icon:
                     self.tray_icon.toggle_window_action.setText("显示窗口")
             else:
                 self.window.show()
+                self._mac_window_hidden = False
                 if self.tray_icon:
                     self.tray_icon.toggle_window_action.setText("隐藏窗口")
 

@@ -1,0 +1,115 @@
+name: 构建三平台安装包
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装依赖
+        run: python -m pip install --upgrade pip && python -m pip install PySide6 PyInstaller
+      - name: 打包 EXE
+        run: python build_all.py
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: win-exe
+          path: dist/PomodoroTaskbar.exe
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装依赖
+        run: python -m pip install --upgrade pip && python -m pip install PySide6 PyInstaller
+      - name: 打包 .app
+        run: python build_all.py
+      - name: ad-hoc 签名（避免 Gatekeeper 拦截）
+        run: codesign --force --deep --sign - dist/PomodoroTaskbar.app || true
+      - name: 压缩为 zip
+        run: cd dist && ditto -c -k --sequesterRsrc --keepParent PomodoroTaskbar.app PomodoroTaskbar_macOS.zip
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-zip
+          path: dist/PomodoroTaskbar_macOS.zip
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PySide6 PyInstaller
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2 desktop-file-utils
+      - name: 打包 ELF
+        run: python build_all.py
+      - name: 制作 AppImage
+        run: |
+          # 下载 appimagetool
+          curl -sSL -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+          # 组装 AppDir
+          mkdir -p AppDir/usr/bin
+          cp dist/PomodoroTaskbar AppDir/usr/bin/
+          cp assets/tomato.png AppDir/pomodoro.png
+          cat > AppDir/pomodoro.desktop <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=PomodoroTaskbar
+          Exec=pomodoro
+          Icon=pomodoro
+          Categories=Utility;
+          EOF
+          cat > AppDir/AppRun <<'EOF'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/PomodoroTaskbar" "$@"
+          EOF
+          chmod +x AppDir/AppRun
+          # 生成 AppImage
+          ARCH=x86_64 ./appimagetool AppDir PomodoroTaskbar_Linux_x86_64.AppImage
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: PomodoroTaskbar_Linux_x86_64.AppImage
+
+  release:
+    needs: [build-windows, build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载所有产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: 发布到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/win-exe/PomodoroTaskbar.exe
+            artifacts/mac-zip/PomodoroTaskbar_macOS.zip
+            artifacts/linux-appimage/PomodoroTaskbar_Linux_x86_64.AppImage
+          generate_release_notes: true
+          name: 🍅 任务栏番茄钟 ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

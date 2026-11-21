@@ -1,6 +1,5 @@
 import os
 import sys
-import winreg
 
 from PySide6.QtWidgets import (
     QDialog, QLabel, QSpinBox, QCheckBox,
@@ -10,6 +9,7 @@ from PySide6.QtCore import Qt, Signal
 
 from theme import THEMES
 from app_icon import get_app_icon
+from platform_utils import set_auto_start
 import sounds
 
 
@@ -92,22 +92,7 @@ class SettingsManager:
                 self.set_auto_start(value)
 
     def set_auto_start(self, enable):
-        try:
-            key_path = r'Software\Microsoft\Windows\CurrentVersion\Run'
-            app_name = 'PomodoroTaskbar'
-
-            if enable:
-                exe_path = sys.executable if getattr(sys, 'frozen', False) else sys.argv[0]
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
-                    winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
-            else:
-                try:
-                    with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
-                        winreg.DeleteValue(key, app_name)
-                except FileNotFoundError:
-                    pass
-        except Exception:
-            pass
+        set_auto_start(enable)
 
 
 class SettingsDialog(QDialog):

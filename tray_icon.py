@@ -1,8 +1,12 @@
+import platform
+
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
-from PySide6.QtGui import QAction
-from PySide6.QtCore import Signal
+from PySide6.QtGui import QAction, QIcon, QPixmap, QPainter, QFont, QColor
+from PySide6.QtCore import Qt, Signal
 
 from app_icon import get_app_icon
+
+IS_MAC = platform.system() == 'Darwin'
 
 
 class TrayIcon(QSystemTrayIcon):
@@ -25,6 +29,30 @@ class TrayIcon(QSystemTrayIcon):
 
     def create_icon(self):
         self.setIcon(get_app_icon())
+
+    def update_countdown(self, text):
+        """更新时间显示：Windows/Linux 走 tooltip；macOS 菜单栏绘制『番茄+倒计时』。"""
+        if not IS_MAC:
+            self.setToolTip(f"番茄钟 {text}" if text else "番茄钟")
+            return
+        self.setToolTip(f"番茄钟 {text}" if text else "番茄钟")
+        try:
+            w, h = 180, 36
+            pix = QPixmap(w, h)
+            pix.fill(Qt.transparent)
+            p = QPainter(pix)
+            p.setRenderHint(QPainter.Antialiasing)
+            # 左侧番茄图标
+            icon = get_app_icon()
+            icon.paint(p, 0, 2, 32, 32)
+            # 右侧倒计时文字（白色，适配黑色菜单栏）
+            p.setFont(QFont("SF Pro Text", 20, QFont.Bold))
+            p.setPen(QColor(255, 255, 255))
+            p.drawText(36, 0, w - 36, h, Qt.AlignVCenter | Qt.AlignLeft, text or "")
+            p.end()
+            self.setIcon(QIcon(pix))
+        except Exception:
+            pass
 
     def create_menu(self):
         self.menu = QMenu()
