@@ -9,17 +9,26 @@ import subprocess
 import sys
 import os
 
+# CI 控制台默认编码可能是 cp1252，强制 UTF-8 避免打印中文时崩溃
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
 SYSTEM = platform.system()
 IS_WIN = SYSTEM == 'Windows'
 IS_MAC = SYSTEM == 'Darwin'
 
-# Windows 用 .ico；macOS 用 .png；Linux 不设图标
+# Windows 用 .ico；macOS 必须用 .icns；Linux 不设图标
 if IS_WIN:
     icon_args = ['--icon', 'assets/app.ico']
 elif IS_MAC:
-    icon_args = ['--icon', 'assets/tomato.png']
+    icon_args = ['--icon', 'assets/app.icns']
 else:
     icon_args = []
+
+# macOS 的 .app bundle 本身就是目录，不能用 onefile（会冲突）
+mode_args = ['--onedir'] if IS_MAC else ['--onefile']
 
 EXCLUDES = [
     'pygame', 'numpy', 'scipy', 'matplotlib', 'PIL', 'Pillow', 'pandas',
@@ -40,7 +49,8 @@ EXCLUDES = [
 cmd = [
     sys.executable, '-m', 'PyInstaller',
     '--noconfirm', '--clean',
-    '--onefile', '--windowed',
+] + mode_args + [
+    '--windowed',
     '--name', 'PomodoroTaskbar',
     '--add-data', 'sound' + os.pathsep + 'sound',
     '--add-data', 'assets' + os.pathsep + 'assets',
