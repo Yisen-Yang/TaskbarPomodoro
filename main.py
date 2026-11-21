@@ -13,6 +13,8 @@ from tray_icon import TrayIcon
 from history_manager import HistoryManager
 from history_dialog import HistoryDialog
 from platform_utils import play_sound_file, IS_MAC, IS_LINUX
+from i18n import tr
+from diagnostics import install_exception_hook, safe_slot, log_exception
 import sounds
 
 
@@ -54,6 +56,7 @@ class PomodoroApp:
         self.settings_dialog = None
         self.history_dialog = None
         self.current_total_seconds = 25 * 60
+        self._settings_before = {}
 
         self.setup_timer()
 
@@ -126,9 +129,10 @@ class PomodoroApp:
 
         # macOS：窗口默认隐藏，托盘菜单文字改为『显示窗口』
         if IS_MAC and getattr(self, '_mac_window_hidden', False):
-            self.tray_icon.toggle_window_action.setText("显示窗口")
+            self.tray_icon.toggle_window_action.setText(tr("Show window"))
 
     # ── 计时器回调 ────────────────────────────────────────────────
+    @safe_slot
     def on_time_updated(self, minutes, seconds):
         if self.window:
             self.window.update_time_display(minutes, seconds)
@@ -137,12 +141,14 @@ class PomodoroApp:
         if self.tray_icon:
             self.tray_icon.update_countdown(f"{minutes:02d}:{seconds:02d}")
 
+    @safe_slot
     def on_state_changed(self, state):
         if self.window:
             self.window.set_running_state(state == TimerState.RUNNING)
         if self.tray_icon:
             self.tray_icon.update_state(state == TimerState.RUNNING)
 
+    @safe_slot
     def on_mode_changed(self, mode):
         if self.window:
             self.window.set_mode(mode == TimerMode.WORK)
@@ -157,6 +163,7 @@ class PomodoroApp:
         minutes, seconds = self.timer.get_remaining_time()
         self.on_time_updated(minutes, seconds)
 
+    @safe_slot
     def on_timer_completed(self, mode):
         continuous = self.settings_manager.get('continuous_focus')
 
@@ -224,22 +231,26 @@ class PomodoroApp:
     def show_notification(self, mode, next_mode=None):
         continuous = self.settings_manager.get('continuous_focus')
         if mode == TimerMode.WORK:
-            title = "🍅 专注完成！"
+            title = tr("🍅 Focus complete!")
             if next_mode == TimerMode.LONG_BREAK:
-                message = f"已完成一轮，好好休息 {self.timer.long_break_minutes} 分钟吧！"
+                message = tr("Great job! Take a {minutes}-minute long break.",
+                             minutes=self.timer.long_break_minutes)
             else:
-                message = "短暂休息一下，准备下一轮专注。"
+                message = tr("Nice work! Take a short break before the next round.")
         elif mode == TimerMode.LONG_BREAK:
-            title = "长休息结束！"
-            message = "准备开始下一轮专注！" if continuous else "准备开始专注！"
+            title = tr("Long break complete!")
+            message = (tr("Ready for the next round!") if continuous
+                       else tr("Ready to focus!"))
         else:
-            title = "休息结束！"
-            message = "准备开始下一轮专注！" if continuous else "准备开始专注！"
+            title = tr("Break complete!")
+            message = (tr("Ready for the next round!") if continuous
+                       else tr("Ready to focus!"))
 
         if self.tray_icon:
             self.tray_icon.showMessage(title, message, QSystemTrayIcon.MessageIcon.Information, 3000)
 
     # ── 按钮事件 ──────────────────────────────────────────────────
+    @safe_slot
     def on_start_pause(self):
         was_idle = (self.timer.get_state() == TimerState.IDLE)
         self.timer.toggle()
@@ -248,9 +259,11 @@ class PomodoroApp:
             if self.settings_manager.get('sound_enabled'):
                 self.play_sound('start')
 
+    @safe_slot
     def on_reset(self):
         self.timer.reset()
 
+    @safe_slot
     def on_start(self):
         was_idle = (self.timer.get_state() == TimerState.IDLE)
         self.timer.start()
@@ -258,10 +271,12 @@ class PomodoroApp:
             if self.settings_manager.get('sound_enabled'):
                 self.play_sound('start')
 
+    @safe_slot
     def on_pause(self):
         self.timer.pause()
 
     # ── 预设切换 ──────────────────────────────────────────────────
+    @safe_slot
     def on_preset_changed(self, text):
         presets = {
             "5/1": (5, 1), "15/5": (15, 5),
@@ -288,10 +303,14 @@ class PomodoroApp:
             self.timer.reset()
 
     # ── 设置 ──────────────────────────────────────────────────────
+    @safe_slot
     def on_settings(self):
         # 暂停 topmost timer，防止 50ms 刷新导致对话框闪动
         if self.window:
             self.window.topmost_timer.stop()
+
+        # 记录打开设置前的值，用于判断哪些项目真的变了
+        self._settings_before = dict(self.settings_manager.settings)
 
         self.settings_dialog = SettingsDialog(self.settings_manager)
         self.settings_dialog.settings_changed.connect(self.on_settings_changed)
@@ -300,18 +319,25 @@ class PomodoroApp:
         if self.window:
             self.window.topmost_timer.start()
 
+    @safe_slot
     def on_settings_changed(self):
-        work_minutes = self.settings_manager.get('work_minutes')
-        break_minutes = self.settings_manager.get('break_minutes')
-        long_break_minutes = self.settings_manager.get('long_break_minutes')
-        long_break_interval = self.settings_manager.get('long_break_interval')
+        before = self._settings_before or {}
+        now = self.settings_manager
 
+        work_minutes = now.get('work_minutes')
+        break_minutes = now.get('break_minutes')
+        long_break_minutes = now.get('long_break_minutes')
+        long_break_interval = now.get('long_break_interval')
+        language = now.get('language')
+
+        # 时长 setter 只在空闲态刷新剩余时间，不会打断正在进行的计时；
+        # 旧版本无条件 reset()，改为仅更新配置，计时状态机保持原样。
         self.timer.set_work_minutes(work_minutes)
         self.timer.set_break_minutes(break_minutes)
         self.timer.set_long_break_minutes(long_break_minutes)
         self.timer.set_long_break_interval(long_break_interval)
 
-        # 关键修复：更新 current_total_seconds，否则圆环比例错误
+        # 更新圆环的总时长基准（不改变剩余秒数与 deadline）
         mode = self.timer.get_mode()
         if mode == TimerMode.WORK:
             self.current_total_seconds = work_minutes * 60
@@ -320,13 +346,12 @@ class PomodoroApp:
         else:
             self.current_total_seconds = break_minutes * 60
 
-        # 始终重置：让界面显示新设定的时间
-        self.timer.reset()
-
-        # 更新窗口显示
+        language_changed = before.get('language') != language
         if self.window:
-            # 应用新主题（即时生效）
-            self.window.set_theme(self.settings_manager.get('theme'))
+            # 应用新主题（即时生效，不重置计时）
+            self.window.set_theme(now.get('theme'))
+            if language_changed:
+                self.window.retranslate()
             minutes, seconds = self.timer.get_remaining_time()
             self.window.update_time_display(minutes, seconds)
             self.window.update_progress(
@@ -336,12 +361,20 @@ class PomodoroApp:
             # 同步预设下拉框
             self.window.update_preset_from_settings(work_minutes, break_minutes)
 
-        # 同步连续专注菜单状态
-        continuous = self.settings_manager.get('continuous_focus')
         if self.tray_icon:
-            self.tray_icon.update_continuous_focus(continuous)
+            if language_changed:
+                self.tray_icon.retranslate()
+                if self.window:
+                    self.tray_icon.toggle_window_action.setText(
+                        tr("Hide window") if self.window.isVisible()
+                        else tr("Show window"))
+                minutes, seconds = self.timer.get_remaining_time()
+                self.tray_icon.update_countdown(f"{minutes:02d}:{seconds:02d}")
+            # 同步连续专注菜单状态
+            self.tray_icon.update_continuous_focus(now.get('continuous_focus'))
 
     # ── 连续专注切换 ──────────────────────────────────────────────
+    @safe_slot
     def on_continuous_focus_toggled(self, checked):
         self.settings_manager.set('continuous_focus', checked)
         # 同步两个菜单的显示状态
@@ -349,6 +382,7 @@ class PomodoroApp:
             self.tray_icon.update_continuous_focus(checked)
 
     # ── 今日统计 ──────────────────────────────────────────────────
+    @safe_slot
     def on_today_stats(self):
         if self.window:
             self.window.topmost_timer.stop()
@@ -359,14 +393,14 @@ class PomodoroApp:
         total_work = self.history_manager.get_total_work_minutes()
 
         msg = QMessageBox()
-        msg.setWindowTitle("今日统计")
+        msg.setWindowTitle(tr("Today's stats"))
         msg.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint)
         msg.setIcon(QMessageBox.Information)
         msg.setText(
-            f"🍅 今日专注：{today_work} 分钟\n"
-            f"✅ 完成番茄钟：{today_count} 次\n"
-            f"☕ 今日休息：{today_break} 分钟\n"
-            f"📊 累计专注：{total_work} 分钟"
+            tr("🍅 Focus today: {minutes} min", minutes=today_work) + "\n"
+            + tr("✅ Pomodoros: {count}", count=today_count) + "\n"
+            + tr("☕ Break today: {minutes} min", minutes=today_break) + "\n"
+            + tr("📊 Total focus: {minutes} min", minutes=total_work)
         )
         msg.setStandardButtons(QMessageBox.Ok)
         msg.exec()
@@ -375,6 +409,7 @@ class PomodoroApp:
             self.window.topmost_timer.start()
 
     # ── 历史记录 ──────────────────────────────────────────────────
+    @safe_slot
     def on_history(self):
         if self.window:
             self.window.topmost_timer.stop()
@@ -389,31 +424,39 @@ class PomodoroApp:
             self.window.topmost_timer.start()
 
     # ── 窗口显隐 ──────────────────────────────────────────────────
+    @safe_slot
     def on_toggle_window(self):
         if self.window:
             if self.window.isVisible():
                 self.window.hide()
                 self._mac_window_hidden = True
                 if self.tray_icon:
-                    self.tray_icon.toggle_window_action.setText("显示窗口")
+                    self.tray_icon.toggle_window_action.setText(tr("Show window"))
             else:
                 self.window.show()
                 self._mac_window_hidden = False
                 if self.tray_icon:
-                    self.tray_icon.toggle_window_action.setText("隐藏窗口")
+                    self.tray_icon.toggle_window_action.setText(tr("Hide window"))
 
+    @safe_slot
     def on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.DoubleClick:
             self.on_start_pause()
 
+    @safe_slot
     def on_exit(self):
-        if self.window:
-            self.window.save_position()
-            self.window.close()
-        QApplication.quit()
+        try:
+            if self.window:
+                self.window.save_position()
+                self.window.close()
+        except Exception as exc:
+            log_exception('on_exit.cleanup', exc)
+        finally:
+            QApplication.quit()
 
 
 def main():
+    install_exception_hook()
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )

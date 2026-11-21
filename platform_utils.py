@@ -13,6 +13,8 @@ import sys
 import platform
 import subprocess
 
+from i18n import tr
+
 IS_WIN = platform.system() == 'Windows'
 IS_MAC = platform.system() == 'Darwin'
 IS_LINUX = platform.system() == 'Linux'
@@ -21,22 +23,39 @@ APP_NAME = 'PomodoroTaskbar'
 
 
 # ── 音效播放 ────────────────────────────────────────────────────────
-# 返回 (能否播放, MCI类型)。MCI 类型仅 Windows 用。
-if IS_WIN:
-    import ctypes
-    _mci = ctypes.windll.winmm
-    _mci.mciSendStringW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p,
-                                    ctypes.c_uint, ctypes.c_void_p]
-    _mci.mciSendStringW.restype = ctypes.c_long
+# MCI 延迟加载：即使系统策略拦截 winmm，也不影响软件启动与主流程。
+_mci = None
+_mci_failed = False
+
+
+def _get_mci():
+    global _mci, _mci_failed
+    if _mci is not None or _mci_failed or not IS_WIN:
+        return _mci
+    try:
+        import ctypes
+        _mci = ctypes.windll.winmm
+        _mci.mciSendStringW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p,
+                                        ctypes.c_uint, ctypes.c_void_p]
+        _mci.mciSendStringW.restype = ctypes.c_long
+    except Exception:
+        from diagnostics import log_exception
+        log_exception('mci.init')
+        _mci_failed = True
+        _mci = None
+    return _mci
 
 
 def play_sound_file(path, mci_type='waveaudio'):
     """跨平台播放提示音。path 为本地音频文件（wav/mp3）。"""
     try:
         if IS_WIN:
-            _mci.mciSendStringW('close bgm', None, 0, None)
-            _mci.mciSendStringW(f'open "{path}" type {mci_type} alias bgm', None, 0, None)
-            _mci.mciSendStringW('play bgm', None, 0, None)
+            mci = _get_mci()
+            if mci is None:
+                return False
+            mci.mciSendStringW('close bgm', None, 0, None)
+            mci.mciSendStringW(f'open "{path}" type {mci_type} alias bgm', None, 0, None)
+            mci.mciSendStringW('play bgm', None, 0, None)
         elif IS_MAC:
             # macOS 自带 afplay，支持 wav/mp3
             subprocess.Popen(['afplay', path],
@@ -156,7 +175,7 @@ def _set_auto_start_linux(enable):
         exe = os.path.abspath(_exe_path())
         content = f'''[Desktop Entry]
 Type=Application
-Name=任务栏番茄钟
+Name={tr("Taskbar Pomodoro")}
 Exec={exe}
 Hidden=false
 NoDisplay=false

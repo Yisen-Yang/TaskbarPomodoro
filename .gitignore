@@ -27,3 +27,6 @@ env/
 
 # 本机推送辅助脚本（含账号信息，不入库）
 推送到GitHub.bat
+
+# 配图生成用的真实截图素材（中间产物，成品 hero/states.png 已入库）
+docs/images/_capture/

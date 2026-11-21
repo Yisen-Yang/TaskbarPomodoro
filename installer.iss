@@ -2,7 +2,7 @@
 ; 用 Inno Setup 6 编译
 
 #define AppName "任务栏番茄钟"
-#define AppVersion "1.1.0"
+#define AppVersion "1.2.0"
 #define AppPublisher "Yisen-Yang"
 #define AppExeName "PomodoroTaskbar.exe"
 
@@ -18,7 +18,7 @@ UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2/max
 SolidCompression=yes
 OutputDir=..\Release交付
-OutputBaseFilename=PomodoroTaskbar_安装版_v1.1.0
+OutputBaseFilename=PomodoroTaskbar_安装版_v1.2.0
 SetupIconFile=assets\app.ico
 Uninstallable=yes
 ; 关键：不请求管理员权限
@@ -40,6 +40,7 @@ Name: "startup"; Description: "开机自动启动"; GroupDescription: "快捷方
 [Files]
 Source: "dist\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "README_EN.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"

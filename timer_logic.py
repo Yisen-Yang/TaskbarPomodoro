@@ -124,6 +124,10 @@ class PomodoroTimer(QObject):
             self.switch_mode(TimerMode.WORK)
 
     def on_timer_tick(self):
+        # 防御：定时器若在异常状态下仍触发，直接停下，避免 None 运算导致退出
+        if self._deadline is None:
+            self.timer.stop()
+            return
         # 剩余时间始终由「截止时刻 - 当前时刻」推导，休眠/卡顿后自动追平
         remaining = max(0.0, self._deadline - time.monotonic())
         new_seconds = int(remaining + 0.999)  # 向上取整，显示从整数秒开始递减

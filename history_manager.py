@@ -17,7 +17,19 @@ class HistoryManager:
             history_path = self.get_history_path()
             if os.path.exists(history_path):
                 with open(history_path, 'r', encoding='utf-8') as f:
-                    self.records = json.load(f)
+                    loaded = json.load(f)
+            else:
+                loaded = []
+            # 文件损坏或结构异常时直接视为空历史，避免后续遍历时崩溃
+            if not isinstance(loaded, list):
+                loaded = []
+            self.records = [
+                r for r in loaded
+                if isinstance(r, dict)
+                and r.get('mode') in ('work', 'break', 'long_break')
+                and isinstance(r.get('duration_minutes'), (int, float))
+                and isinstance(r.get('completed_at'), str)
+            ]
         except Exception:
             self.records = []
     
@@ -49,7 +61,14 @@ class HistoryManager:
     def get_week_records(self):
         now = datetime.now()
         week_ago = now - timedelta(days=7)
-        return [r for r in self.records if datetime.fromisoformat(r['completed_at']) >= week_ago]
+        result = []
+        for record in self.records:
+            try:
+                if datetime.fromisoformat(record['completed_at']) >= week_ago:
+                    result.append(record)
+            except (ValueError, KeyError, TypeError):
+                continue
+        return result
     
     def get_total_work_minutes(self):
         return sum(r['duration_minutes'] for r in self.records if r['mode'] == 'work')

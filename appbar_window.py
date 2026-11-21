@@ -14,6 +14,13 @@ from PySide6.QtGui import (
 
 from theme import get_palette
 from app_icon import get_app_icon
+from i18n import tr
+
+try:
+    from shiboken6 import isValid as _qt_is_valid
+except Exception:  # 极端环境下仍可运行，只是少一层保护
+    def _qt_is_valid(obj):
+        return True
 
 IS_WIN = platform.system() == 'Windows'
 
@@ -23,59 +30,70 @@ def _app_icon():
     return get_app_icon()
 
 
-# ── Windows API（仅在 Windows 上加载，Mac/Linux 下全部为 None）──
+# ── Windows API（加载失败时自动退回 Qt 原生置顶，不让软件闪退）──
+SWP_NOMOVE = 0x0002
+SWP_NOSIZE = 0x0001
+SWP_NOACTIVATE = 0x0010
+SWP_SHOWWINDOW = 0x0040
+SWP_FRAMECHANGED = 0x0020
+
+GWL_EXSTYLE = -20
+WS_EX_TOPMOST = 0x00000008
+WS_EX_TOOLWINDOW = 0x00000080
+WS_EX_NOACTIVATE = 0x08000000
+WS_EX_LAYERED = 0x00080000
+
+HWND_TOPMOST = -1
+HWND_NOTOPMOST = -2
+
+user32 = None
+shell32 = None
+
 if IS_WIN:
-    import ctypes
-    from ctypes import wintypes
+    try:
+        import ctypes
+        from ctypes import wintypes
 
-    user32 = ctypes.windll.user32
-    shell32 = ctypes.windll.shell32
+        user32 = ctypes.windll.user32
+        shell32 = ctypes.windll.shell32
 
-    SWP_NOMOVE = 0x0002
-    SWP_NOSIZE = 0x0001
-    SWP_NOACTIVATE = 0x0010
-    SWP_SHOWWINDOW = 0x0040
-    SWP_FRAMECHANGED = 0x0020
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", wintypes.LONG),
+                ("top", wintypes.LONG),
+                ("right", wintypes.LONG),
+                ("bottom", wintypes.LONG),
+            ]
 
-    GWL_EXSTYLE = -20
-    WS_EX_TOPMOST = 0x00000008
-    WS_EX_TOOLWINDOW = 0x00000080
-    WS_EX_NOACTIVATE = 0x08000000
-    WS_EX_LAYERED = 0x00080000
-
-    HWND_TOPMOST = -1
-    HWND_NOTOPMOST = -2
-
-    class RECT(ctypes.Structure):
-        _fields_ = [
-            ("left", wintypes.LONG),
-            ("top", wintypes.LONG),
-            ("right", wintypes.LONG),
-            ("bottom", wintypes.LONG),
+        # 64位兼容：设置函数签名
+        user32.SetWindowPos.restype = wintypes.BOOL
+        user32.SetWindowPos.argtypes = [
+            wintypes.HWND, wintypes.HWND,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            wintypes.UINT
         ]
+        user32.GetWindowLongW.restype = wintypes.LONG
+        user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.SetWindowLongW.restype = wintypes.LONG
+        user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+        user32.FindWindowW.restype = wintypes.HWND
+        user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
+        user32.GetWindowRect.restype = wintypes.BOOL
+        user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
+        user32.BringWindowToTop.restype = wintypes.BOOL
+        user32.BringWindowToTop.argtypes = [wintypes.HWND]
+        user32.GetForegroundWindow.restype = wintypes.HWND
+        user32.GetForegroundWindow.argtypes = []
+    except Exception:
+        # 例如公司策略拦截 DLL：记录到诊断日志，继续用 Qt 原生置顶
+        from diagnostics import log_exception
+        log_exception('win32.init')
+        user32 = None
+        shell32 = None
 
-    # 64位兼容：设置函数签名
-    user32.SetWindowPos.restype = wintypes.BOOL
-    user32.SetWindowPos.argtypes = [
-        wintypes.HWND, wintypes.HWND,
-        ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
-        wintypes.UINT
-    ]
-    user32.GetWindowLongW.restype = wintypes.LONG
-    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
-    user32.SetWindowLongW.restype = wintypes.LONG
-    user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
-    user32.FindWindowW.restype = wintypes.HWND
-    user32.FindWindowW.argtypes = [wintypes.LPCWSTR, wintypes.LPCWSTR]
-    user32.GetWindowRect.restype = wintypes.BOOL
-    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(RECT)]
-    user32.BringWindowToTop.restype = wintypes.BOOL
-    user32.BringWindowToTop.argtypes = [wintypes.HWND]
-    user32.GetForegroundWindow.restype = wintypes.HWND
-    user32.GetForegroundWindow.argtypes = []
-else:
-    user32 = None
-    shell32 = None
+
+def _win32_ready():
+    return IS_WIN and user32 is not None
 
 
 class _TopmostComboBox(QComboBox):
@@ -90,7 +108,7 @@ class _TopmostComboBox(QComboBox):
         if host is not None and host.topmost_timer.isActive():
             host.topmost_timer.stop()
         super().showPopup()
-        if not IS_WIN:
+        if not _win32_ready():
             return
         # 不改 windowFlags（会重建弹出层）；仅 Win32 TOPMOST 压过宿主覆盖窗
         try:
@@ -107,10 +125,17 @@ class _TopmostComboBox(QComboBox):
             pass
 
     def hidePopup(self):
-        super().hidePopup()
+        try:
+            super().hidePopup()
+        except RuntimeError:
+            # 退出时 C++ 对象可能已销毁，忽略即可
+            pass
         host = self._host
-        if host is not None:
-            host._resume_topmost_if_needed()
+        if host is not None and _qt_is_valid(host):
+            try:
+                host._resume_topmost_if_needed()
+            except (RuntimeError, AttributeError):
+                pass
 
 
 class _TopmostMenu(QMenu):
@@ -132,20 +157,26 @@ class _TopmostMenu(QMenu):
 
     def exec(self, *args, **kwargs):
         host = self._host
-        if host is not None and host.topmost_timer.isActive():
+        if host is not None and _qt_is_valid(host) and host.topmost_timer.isActive():
             host.topmost_timer.stop()
-        if IS_WIN:
+        if _win32_ready():
             self._pin_timer.start()
         try:
             return super().exec(*args, **kwargs)
         finally:
-            self._pin_timer.stop()
-            if host is not None:
-                host._resume_topmost_if_needed()
+            try:
+                self._pin_timer.stop()
+            except RuntimeError:
+                pass
+            if host is not None and _qt_is_valid(host):
+                try:
+                    host._resume_topmost_if_needed()
+                except (RuntimeError, AttributeError):
+                    pass
 
     # PySide6 的 QMenu.exec(pos) 与 exec() 都存在，统一别名
     def _pin_self(self):
-        if not IS_WIN:
+        if not _win32_ready() or not _qt_is_valid(self):
             return
         try:
             hwnd = int(self.winId())
@@ -229,7 +260,7 @@ class PomodoroWindow(QWidget):
         layout.addWidget(self.reset_btn)
 
         self.pin_btn = QPushButton("📍")
-        self.pin_btn.setToolTip("锁定窗口（禁止拖动）")
+        self.pin_btn.setToolTip(tr("Lock window (disable dragging)"))
         self.pin_btn.clicked.connect(self.on_pin_toggle)
         layout.addWidget(self.pin_btn)
 
@@ -337,12 +368,13 @@ class PomodoroWindow(QWidget):
         self._apply_sizing()
 
     def _resume_topmost_if_needed(self):
-        if IS_WIN and self.isVisible() and not self.topmost_timer.isActive():
+        if (_win32_ready() and _qt_is_valid(self)
+                and self.isVisible() and not self.topmost_timer.isActive()):
             self.topmost_timer.start()
 
     # ── 置顶（Windows 用 Win32 强制置顶，Mac/Linux 用 Qt 原生 hint）──
     def _apply_windows_topmost_style(self):
-        if not IS_WIN:
+        if not _win32_ready():
             return
         hwnd = int(self.winId())
         if not hwnd:
@@ -369,7 +401,7 @@ class PomodoroWindow(QWidget):
             self._screen_changed_connected = True
 
     def set_window_topmost(self, topmost):
-        if not IS_WIN:
+        if not _win32_ready():
             # macOS / Linux：Qt 原生置顶，无需 50ms 定时器
             flags = self.windowFlags()
             if topmost:
@@ -379,36 +411,42 @@ class PomodoroWindow(QWidget):
             if self.isVisible():
                 self.show()  # 改 flags 后需重新 show 才生效
             return
-        hwnd = int(self.winId())
-        if not hwnd:
-            return
-        if topmost:
-            user32.SetWindowPos(
-                hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
-            )
-            user32.BringWindowToTop(hwnd)
-            if not self.topmost_timer.isActive():
-                self.topmost_timer.start()
-        else:
-            user32.SetWindowPos(
-                hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
-            )
-            if self.topmost_timer.isActive():
-                self.topmost_timer.stop()
-
-    def on_topmost_timeout(self):
-        if not IS_WIN:
-            return
-        if self.isVisible():
+        try:
             hwnd = int(self.winId())
-            if hwnd:
+            if not hwnd:
+                return
+            if topmost:
                 user32.SetWindowPos(
                     hwnd, HWND_TOPMOST, 0, 0, 0, 0,
                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
                 )
                 user32.BringWindowToTop(hwnd)
+                if not self.topmost_timer.isActive():
+                    self.topmost_timer.start()
+            else:
+                user32.SetWindowPos(
+                    hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+                )
+                if self.topmost_timer.isActive():
+                    self.topmost_timer.stop()
+        except Exception:
+            pass
+
+    def on_topmost_timeout(self):
+        if not _win32_ready() or not _qt_is_valid(self):
+            return
+        try:
+            if self.isVisible():
+                hwnd = int(self.winId())
+                if hwnd:
+                    user32.SetWindowPos(
+                        hwnd, HWND_TOPMOST, 0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW
+                    )
+                    user32.BringWindowToTop(hwnd)
+        except Exception:
+            pass
 
     # ── 绘制（精致半透明背景）──────────────────────────────────────
     def paintEvent(self, event):
@@ -475,17 +513,17 @@ class PomodoroWindow(QWidget):
         """)
 
         is_running = (self.start_btn.text() == "⏸")
-        toggle_action = QAction("⏸ 暂停" if is_running else "▶ 开始", menu)
+        toggle_action = QAction(tr("⏸ Pause") if is_running else tr("▶ Start"), menu)
         toggle_action.triggered.connect(self.on_start_pause)
         menu.addAction(toggle_action)
 
-        reset_action = QAction("↺ 重置", menu)
+        reset_action = QAction(tr("↺ Reset"), menu)
         reset_action.triggered.connect(self.on_reset)
         menu.addAction(reset_action)
 
         menu.addSeparator()
 
-        continuous_action = QAction("🔄 连续专注", menu)
+        continuous_action = QAction(tr("🔄 Continuous focus"), menu)
         continuous_action.setCheckable(True)
         continuous_action.setChecked(self.settings_manager.get('continuous_focus'))
         continuous_action.toggled.connect(self.continuous_focus_toggled.emit)
@@ -493,21 +531,21 @@ class PomodoroWindow(QWidget):
 
         menu.addSeparator()
 
-        stats_action = QAction("📊 今日统计", menu)
+        stats_action = QAction(tr("📊 Today's stats"), menu)
         stats_action.triggered.connect(self.stats_requested.emit)
         menu.addAction(stats_action)
 
-        settings_action = QAction("⚙ 设置", menu)
+        settings_action = QAction(tr("⚙ Settings"), menu)
         settings_action.triggered.connect(self.settings_requested.emit)
         menu.addAction(settings_action)
 
         menu.addSeparator()
 
-        hide_action = QAction("👁 隐藏窗口", menu)
+        hide_action = QAction(tr("👁 Hide window"), menu)
         hide_action.triggered.connect(self.hide_requested.emit)
         menu.addAction(hide_action)
 
-        exit_action = QAction("✕ 退出", menu)
+        exit_action = QAction(tr("✕ Exit"), menu)
         exit_action.triggered.connect(self.exit_requested.emit)
         menu.addAction(exit_action)
 
@@ -523,7 +561,10 @@ class PomodoroWindow(QWidget):
     def mouseMoveEvent(self, event):
         if self.dragging and not self.is_pinned:
             new_pos = event.globalPosition().toPoint() - self.drag_start_pos
-            virtual_geo = QGuiApplication.primaryScreen().virtualGeometry()
+            screen = self.screen() or QGuiApplication.primaryScreen()
+            if screen is None:
+                return
+            virtual_geo = screen.virtualGeometry()
             new_pos.setX(max(virtual_geo.left(), min(new_pos.x(), virtual_geo.right() - self.width())))
             new_pos.setY(max(virtual_geo.top(), min(new_pos.y(), virtual_geo.bottom() - self.height())))
             self.move(new_pos)
@@ -538,7 +579,10 @@ class PomodoroWindow(QWidget):
     # ── 定位 ──────────────────────────────────────────────────────
     def position_on_taskbar(self):
         """默认定位：从右到左 1/4 处，底部覆盖任务栏"""
-        screen_geo = self.screen().geometry()
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        screen_geo = screen.geometry()
         x = int(screen_geo.width() * 3 / 4) - self.width() // 2
         y = screen_geo.height() - self.height()
         self.move(x, max(0, y))
@@ -572,12 +616,19 @@ class PomodoroWindow(QWidget):
         if self.is_pinned:
             self.dragging = False
             self.pin_btn.setText("📍")
-            self.pin_btn.setToolTip("已锁定（禁止拖动）——点击解锁")
+            self.pin_btn.setToolTip(tr("Locked (dragging disabled) - click to unlock"))
             self.save_position()
         else:
             self.pin_btn.setText("🔓")
-            self.pin_btn.setToolTip("已解锁（可拖动位置）——点击锁定")
+            self.pin_btn.setToolTip(tr("Unlocked (draggable) - click to lock"))
         self.pin_toggled.emit(self.is_pinned)
+
+    def retranslate(self):
+        """切换界面语言后刷新固定文字（右键菜单每次弹出时自动重建）。"""
+        if self.is_pinned:
+            self.pin_btn.setToolTip(tr("Locked (dragging disabled) - click to unlock"))
+        else:
+            self.pin_btn.setToolTip(tr("Unlocked (draggable) - click to lock"))
 
     # ── 外部调用接口 ──────────────────────────────────────────────
     def update_time_display(self, minutes, seconds):
@@ -600,10 +651,10 @@ class PomodoroWindow(QWidget):
         self.is_pinned = pinned
         if pinned:
             self.pin_btn.setText("📍")
-            self.pin_btn.setToolTip("已锁定（禁止拖动）——点击解锁")
+            self.pin_btn.setToolTip(tr("Locked (dragging disabled) - click to unlock"))
         else:
             self.pin_btn.setText("🔓")
-            self.pin_btn.setToolTip("已解锁（可拖动位置）——点击锁定")
+            self.pin_btn.setToolTip(tr("Unlocked (draggable) - click to lock"))
 
     def update_preset_from_settings(self, work, break_min):
         """同步预设下拉框，不触发信号"""

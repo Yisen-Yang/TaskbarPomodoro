@@ -4,13 +4,22 @@
 颜色统一用 (r, g, b, a) 元组，方便 QColor 构造和字符串拼接。
 """
 
-# 主题显示名 -> key（设置里存 key）
+# 主题显示名 -> key（保留旧接口；界面显示统一走 theme_label，支持多语言）
 THEMES = {
     "经典深空": "deep_space",
     "清爽浅色": "light",
     "番茄红": "tomato",
     "森林绿": "forest",
     "iOS 现代风": "ios",
+}
+
+# 主题 key -> 英文原文（作为翻译 key）
+THEME_LABELS = {
+    "deep_space": "Classic Deep Space",
+    "light": "Light",
+    "tomato": "Tomato Red",
+    "forest": "Forest Green",
+    "ios": "iOS Modern",
 }
 
 # 每套主题的完整配色
@@ -215,5 +224,16 @@ def get_palette(key):
 
 
 def theme_names():
-    """返回主题显示名列表（保持定义顺序）。"""
+    """返回主题显示名列表（兼容旧调用，固定为中文名）。"""
     return list(THEMES.keys())
+
+
+def theme_keys():
+    """返回主题 key 列表（保持定义顺序）。"""
+    return [key for key in THEMES.values()]
+
+
+def theme_label(key):
+    """返回当前界面语言的主题显示名。"""
+    from i18n import tr
+    return tr(THEME_LABELS.get(key, 'Classic Deep Space'))

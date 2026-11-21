@@ -5,6 +5,7 @@ from PySide6.QtGui import QAction, QIcon, QPixmap, QPainter, QFont, QColor
 from PySide6.QtCore import Qt, Signal
 
 from app_icon import get_app_icon
+from i18n import tr
 
 IS_MAC = platform.system() == 'Darwin'
 
@@ -22,20 +23,29 @@ class TrayIcon(QSystemTrayIcon):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._countdown_text = ''
+        self._running = False
         self.create_icon()
         self.create_menu()
-        self.setToolTip("番茄钟")
+        self._refresh_tooltip()
         self.show()
 
     def create_icon(self):
         self.setIcon(get_app_icon())
 
+    def _refresh_tooltip(self):
+        text = (tr("Pomodoro {time}", time=self._countdown_text)
+                if self._countdown_text else tr("Pomodoro"))
+        if self._running:
+            text += " - " + tr("Running")
+        self.setToolTip(text)
+
     def update_countdown(self, text):
         """更新时间显示：Windows/Linux 走 tooltip；macOS 菜单栏绘制『番茄+倒计时』。"""
+        self._countdown_text = text or ''
+        self._refresh_tooltip()
         if not IS_MAC:
-            self.setToolTip(f"番茄钟 {text}" if text else "番茄钟")
             return
-        self.setToolTip(f"番茄钟 {text}" if text else "番茄钟")
         try:
             w, h = 180, 36
             pix = QPixmap(w, h)
@@ -48,7 +58,7 @@ class TrayIcon(QSystemTrayIcon):
             # 右侧倒计时文字（白色，适配黑色菜单栏）
             p.setFont(QFont("SF Pro Text", 20, QFont.Bold))
             p.setPen(QColor(255, 255, 255))
-            p.drawText(36, 0, w - 36, h, Qt.AlignVCenter | Qt.AlignLeft, text or "")
+            p.drawText(36, 0, w - 36, h, Qt.AlignVCenter | Qt.AlignLeft, self._countdown_text)
             p.end()
             self.setIcon(QIcon(pix))
         except Exception:
@@ -57,38 +67,38 @@ class TrayIcon(QSystemTrayIcon):
     def create_menu(self):
         self.menu = QMenu()
 
-        self.start_action = QAction("开始", self)
+        self.start_action = QAction(tr("Start"), self)
         self.start_action.triggered.connect(self.on_start_triggered)
 
-        self.pause_action = QAction("暂停", self)
+        self.pause_action = QAction(tr("Pause"), self)
         self.pause_action.triggered.connect(self.on_pause_triggered)
         self.pause_action.setVisible(False)
 
-        self.reset_action = QAction("重置", self)
+        self.reset_action = QAction(tr("Reset"), self)
         self.reset_action.triggered.connect(self.on_reset_triggered)
 
         self.menu.addSeparator()
 
         # 连续专注（可勾选）
-        self.continuous_action = QAction("连续专注", self)
+        self.continuous_action = QAction(tr("Continuous focus"), self)
         self.continuous_action.setCheckable(True)
         self.continuous_action.triggered.connect(self.on_continuous_focus_triggered)
 
-        self.today_stats_action = QAction("今日统计", self)
+        self.today_stats_action = QAction(tr("Today's stats"), self)
         self.today_stats_action.triggered.connect(self.on_today_stats_triggered)
 
-        self.settings_action = QAction("设置", self)
+        self.settings_action = QAction(tr("Settings"), self)
         self.settings_action.triggered.connect(self.on_settings_triggered)
 
-        self.history_action = QAction("历史记录", self)
+        self.history_action = QAction(tr("History"), self)
         self.history_action.triggered.connect(self.on_history_triggered)
 
-        self.toggle_window_action = QAction("隐藏窗口", self)
+        self.toggle_window_action = QAction(tr("Hide window"), self)
         self.toggle_window_action.triggered.connect(self.on_toggle_window_triggered)
 
         self.menu.addSeparator()
 
-        self.exit_action = QAction("退出", self)
+        self.exit_action = QAction(tr("Exit"), self)
         self.exit_action.triggered.connect(self.on_exit_triggered)
 
         self.menu.addActions([
@@ -110,15 +120,30 @@ class TrayIcon(QSystemTrayIcon):
 
         self.setContextMenu(self.menu)
 
+    def retranslate(self):
+        """切换界面语言后刷新托盘菜单与提示文字。"""
+        self.start_action.setText(tr("Start"))
+        self.pause_action.setText(tr("Pause"))
+        self.reset_action.setText(tr("Reset"))
+        self.continuous_action.setText(tr("Continuous focus"))
+        self.today_stats_action.setText(tr("Today's stats"))
+        self.settings_action.setText(tr("Settings"))
+        self.history_action.setText(tr("History"))
+        self.toggle_window_action.setText(tr("Hide window"))
+        self.exit_action.setText(tr("Exit"))
+        self._refresh_tooltip()
+        if IS_MAC:
+            self.update_countdown(self._countdown_text)
+
     def update_state(self, is_running):
+        self._running = is_running
         if is_running:
             self.start_action.setVisible(False)
             self.pause_action.setVisible(True)
-            self.setToolTip("番茄钟 - 运行中")
         else:
             self.start_action.setVisible(True)
             self.pause_action.setVisible(False)
-            self.setToolTip("番茄钟")
+        self._refresh_tooltip()
 
     def update_continuous_focus(self, checked):
         """从外部更新连续专注菜单状态"""
