@@ -64,8 +64,9 @@ Grab a package for your platform from [Releases](../../releases); no Python inst
 
 | Platform | File | Notes |
 |----------|------|-------|
-| Windows | `PomodoroTaskbar_安装版_vX.X.X.exe` | Installs to the user directory, no admin rights, shortcuts and uninstaller included; choose language at install, upgrades in place |
-| Windows | `PomodoroTaskbar_绿色版_vX.X.X.zip` | Portable; unzip and run, delete the folder to uninstall (includes the original icon) |
+| Windows | `PomodoroTaskbar_Setup_vX.X.X.exe` | Installs to the user directory, no admin rights, shortcuts and uninstaller included; choose language at install, upgrades in place |
+| Windows | `PomodoroTaskbar_Portable_vX.X.X.zip` | Portable; unzip and run, delete the folder to uninstall (includes the original icon) |
+| Windows | `PomodoroTaskbar.exe` | Single-file standalone executable, run by double-clicking |
 | Linux | `PomodoroTaskbar_Linux_x86_64.AppImage` | Make executable and run; no installation, works across distros |
 
 ### Building

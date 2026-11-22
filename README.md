@@ -67,8 +67,9 @@ python main.py
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| Windows | `PomodoroTaskbar_安装版_vX.X.X.exe` | 双击安装到用户目录，自动建快捷方式，无需管理员权限，可卸载；安装时选语言、重装覆盖升级 |
-| Windows | `PomodoroTaskbar_绿色版_vX.X.X.zip` | 解压即用，删除文件夹即卸载（内含番茄图标原图） |
+| Windows | `PomodoroTaskbar_Setup_vX.X.X.exe` | 双击安装到用户目录，自动建快捷方式，无需管理员权限，可卸载；安装时选语言、重装覆盖升级 |
+| Windows | `PomodoroTaskbar_Portable_vX.X.X.zip` | 解压即用，删除文件夹即卸载（内含番茄图标原图） |
+| Windows | `PomodoroTaskbar.exe` | 免安装单文件主程序，双击即可运行 |
 | Linux | `PomodoroTaskbar_Linux_x86_64.AppImage` | 赋可执行权限后双击运行，免安装、跨发行版 |
 
 ### 打包

@@ -30,20 +30,20 @@ jobs:
           $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
           if (-not (Test-Path $iscc)) { $iscc = 'C:\Program Files\Inno Setup 6\ISCC.exe' }
           & $iscc installer.iss
-          Copy-Item '..\Release交付\PomodoroTaskbar_安装版_*.exe' -Destination '.'
+          Copy-Item '..\Release交付\PomodoroTaskbar_安装版_*.exe' -Destination 'PomodoroTaskbar_Setup_${{ github.ref_name }}.exe'
       - name: 生成绿色版压缩包
         shell: pwsh
         run: |
           '双击 PomodoroTaskbar.exe 启动；删除本文件夹即卸载。' | Out-File -Encoding utf8 使用说明.txt
-          Compress-Archive -Path 'dist\PomodoroTaskbar.exe','README.md','README_EN.md','LICENSE','assets\番茄钟图标_原始.png','使用说明.txt' -DestinationPath 'PomodoroTaskbar_绿色版_${{ github.ref_name }}.zip'
+          Compress-Archive -Path 'dist\PomodoroTaskbar.exe','README.md','README_EN.md','LICENSE','assets\番茄钟图标_原始.png','使用说明.txt' -DestinationPath 'PomodoroTaskbar_Portable_${{ github.ref_name }}.zip'
       - name: 上传产物
         uses: actions/upload-artifact@v4
         with:
           name: win-exe
           path: |
             dist/PomodoroTaskbar.exe
-            PomodoroTaskbar_安装版_*.exe
-            PomodoroTaskbar_绿色版_*.zip
+            PomodoroTaskbar_Setup_*.exe
+            PomodoroTaskbar_Portable_*.zip
 
   build-linux:
     runs-on: ubuntu-latest
@@ -104,8 +104,9 @@ jobs:
         with:
           files: |
             artifacts/win-exe/PomodoroTaskbar.exe
-            artifacts/win-exe/PomodoroTaskbar_安装版_*.exe
-            artifacts/win-exe/PomodoroTaskbar_绿色版_*.zip
+            artifacts/win-exe/dist/PomodoroTaskbar.exe
+            artifacts/win-exe/PomodoroTaskbar_Setup_*.exe
+            artifacts/win-exe/PomodoroTaskbar_Portable_*.zip
             artifacts/linux-appimage/PomodoroTaskbar_Linux_x86_64.AppImage
           generate_release_notes: true
           name: 🍅 任务栏番茄钟 ${{ github.ref_name }}
