@@ -23,6 +23,7 @@ Thumbs.db
 # 虚拟环境
 venv/
 .venv/
+.venv_build/
 env/
 
 # 本机推送辅助脚本（含账号信息，不入库）

@@ -13,6 +13,7 @@ from PySide6.QtGui import (
 )
 
 from theme import get_palette
+from ui_style import menu_stylesheet
 from app_icon import get_app_icon
 from i18n import tr
 
@@ -209,6 +210,8 @@ class PomodoroWindow(QWidget):
         self.is_pinned = True
         self.progress = 0.0
         self.is_work_mode = True
+        self.timer_mode = 'work'
+        self._theme_key = 'deep_space'
         self.palette = get_palette(self.settings_manager.get('theme'))
 
         self.setWindowIcon(_app_icon())
@@ -329,6 +332,7 @@ class PomodoroWindow(QWidget):
 
     def set_theme(self, theme_key):
         """外部切换主题入口。"""
+        self._theme_key = theme_key
         self.palette = get_palette(theme_key)
         self._apply_theme()
 
@@ -402,7 +406,7 @@ class PomodoroWindow(QWidget):
 
     def set_window_topmost(self, topmost):
         if not _win32_ready():
-            # macOS / Linux：Qt 原生置顶，无需 50ms 定时器
+            # Linux：Qt 原生置顶，无需 50ms 定时器
             flags = self.windowFlags()
             if topmost:
                 self.setWindowFlags(flags | Qt.WindowStaysOnTopHint)
@@ -457,7 +461,10 @@ class PomodoroWindow(QWidget):
         # 主背景渐变（取当前主题配色）
         p = self.palette
         gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        if self.is_work_mode:
+        if self.timer_mode == 'long_break':
+            gradient.setColorAt(0, QColor(*p['bg_top_long']))
+            gradient.setColorAt(1, QColor(*p['bg_bottom_long']))
+        elif self.is_work_mode:
             gradient.setColorAt(0, QColor(*p['bg_top']))
             gradient.setColorAt(1, QColor(*p['bg_bottom']))
         else:
@@ -482,35 +489,19 @@ class PomodoroWindow(QWidget):
         painter.setBrush(Qt.NoBrush)
         painter.drawRoundedRect(rect.adjusted(0, 0, -1, -1), 8, 8)
 
+        # 锁定态：强调色描边，一眼可辨
+        if self.is_pinned:
+            lock_pen = QPen(QColor(*p['ring_work1']), 1.5)
+            lock_pen.setColor(QColor(*p['ring_work1']))
+            painter.setPen(lock_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(1, 1, -2, -2), 8, 8)
+
     # ── 右键菜单 ──────────────────────────────────────────────────
     def contextMenuEvent(self, event):
         menu = _TopmostMenu(self)
         p = self.palette
-        menu.setStyleSheet(f"""
-            QMenu {{
-                background-color: {p['menu_bg']};
-                color: {p['menu_text']};
-                border: 1px solid {p['menu_border']};
-                border-radius: 8px;
-                padding: 6px;
-            }}
-            QMenu::item {{
-                padding: 6px 28px;
-                border-radius: 4px;
-                font-size: 13px;
-            }}
-            QMenu::item:selected {{
-                background-color: {p['menu_sel']};
-            }}
-            QMenu::separator {{
-                height: 1px;
-                background-color: {p['menu_sep']};
-                margin: 4px 10px;
-            }}
-            QMenu::indicator {{
-                width: 16px;
-            }}
-        """)
+        menu.setStyleSheet(menu_stylesheet(self._theme_key))
 
         is_running = (self.start_btn.text() == "⏸")
         toggle_action = QAction(tr("⏸ Pause") if is_running else tr("▶ Start"), menu)
@@ -642,6 +633,13 @@ class PomodoroWindow(QWidget):
     def set_running_state(self, is_running):
         self.start_btn.setText("⏸" if is_running else "▶")
 
+    def set_timer_mode(self, mode_key):
+        """按计时模式切换视觉：work / break / long_break。"""
+        self.timer_mode = mode_key
+        self.is_work_mode = (mode_key == 'work')
+        self.progress_widget.set_timer_mode(mode_key)
+        self.update()
+
     def set_mode(self, is_work_mode):
         self.is_work_mode = is_work_mode
         self.progress_widget.set_mode(is_work_mode)
@@ -671,6 +669,7 @@ class ProgressRing(QWidget):
         super().__init__()
         self.progress = 0.0
         self.is_work_mode = True
+        self.timer_mode = 'work'
         self.palette = get_palette('deep_space')
 
     def set_palette(self, palette):
@@ -680,6 +679,11 @@ class ProgressRing(QWidget):
     def update_progress(self, progress, is_work_mode):
         self.progress = progress
         self.is_work_mode = is_work_mode
+        self.update()
+
+    def set_timer_mode(self, mode_key):
+        self.timer_mode = mode_key
+        self.is_work_mode = (mode_key == 'work')
         self.update()
 
     def set_mode(self, is_work_mode):
@@ -708,7 +712,10 @@ class ProgressRing(QWidget):
         painter.drawEllipse(center, radius, radius)
 
         # 进度圆环：工作/休息各用主题的渐变色
-        if self.is_work_mode:
+        if self.timer_mode == 'long_break':
+            color1 = QColor(*p['ring_long1'])
+            color2 = QColor(*p['ring_long2'])
+        elif self.is_work_mode:
             color1 = QColor(*p['ring_work1'])
             color2 = QColor(*p['ring_work2'])
         else:
@@ -736,7 +743,10 @@ class ProgressRing(QWidget):
 
         # 内圈装饰（主题配色）
         inner_gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
-        if self.is_work_mode:
+        if self.timer_mode == 'long_break':
+            inner_gradient.setColorAt(0, QColor(*p['ring_inner_long1']))
+            inner_gradient.setColorAt(1, QColor(*p['ring_inner_long2']))
+        elif self.is_work_mode:
             inner_gradient.setColorAt(0, QColor(*p['ring_inner_work1']))
             inner_gradient.setColorAt(1, QColor(*p['ring_inner_work2']))
         else:

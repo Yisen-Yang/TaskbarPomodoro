@@ -1,14 +1,51 @@
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from PySide6.QtWidgets import (
-    QDialog, QLabel, QTableWidget, QTableWidgetItem,
+    QDialog, QLabel, QTableWidget, QTableWidgetItem, QWidget,
     QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox,
     QHeaderView
 )
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QRect
+from PySide6.QtGui import (
+    QColor, QPainter, QPen, QBrush, QLinearGradient, QPalette
+)
 from app_icon import get_app_icon
 from i18n import tr
+
+
+
+class TrendBar(QWidget):
+    """趋势图里的单根柱子：圆角渐变 + 顶部数值 + 底部星期。"""
+
+    def __init__(self, value, maximum, label, parent=None):
+        super().__init__(parent)
+        self.value = value
+        self.maximum = max(1, maximum)
+        self.day_label = label
+        self.setFixedHeight(104)
+        self.setMinimumWidth(28)
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        w, h = self.width(), self.height()
+        text_color = self.palette().color(QPalette.WindowText)
+
+        bar_h = max(3, int((h - 26) * min(1.0, self.value / self.maximum)))
+        rect = QRect(5, h - 24 - bar_h, w - 10, bar_h)
+        gradient = QLinearGradient(rect.topLeft(), rect.bottomRight())
+        gradient.setColorAt(0, QColor('#ff6b5a'))
+        gradient.setColorAt(1, QColor('#ffa06e'))
+        painter.setBrush(QBrush(gradient))
+        painter.setPen(Qt.NoPen)
+        painter.drawRoundedRect(rect, 4, 4)
+
+        painter.setPen(QPen(text_color))
+        if self.value:
+            painter.drawText(QRect(0, rect.top() - 15, w, 14),
+                             Qt.AlignCenter, str(self.value))
+        painter.drawText(QRect(0, h - 20, w, 16),
+                         Qt.AlignCenter, self.day_label)
 
 
 class HistoryDialog(QDialog):
@@ -17,7 +54,7 @@ class HistoryDialog(QDialog):
         self.history_manager = history_manager
         self.setWindowTitle(tr("History"))
         self.setWindowIcon(get_app_icon())
-        self.setFixedSize(500, 400)
+        self.setFixedSize(560, 520)
         self.init_ui()
 
     def init_ui(self):
@@ -49,6 +86,23 @@ class HistoryDialog(QDialog):
         stats_layout.addWidget(total_work_label)
 
         layout.addWidget(stats_group)
+
+        # ── 近 7 日趋势（复用已有数据层）──
+        weekly = self.history_manager.get_weekly_stats()
+        trend_group = QGroupBox(tr("Last 7 days · focus minutes"))
+        trend_layout = QHBoxLayout(trend_group)
+        trend_layout.setContentsMargins(10, 8, 10, 8)
+        trend_layout.setSpacing(6)
+        today = date.today()
+        values = []
+        for offset in range(6, -1, -1):
+            day = today - timedelta(days=offset)
+            minutes = weekly.get(day.isoformat(), {}).get('work', 0)
+            values.append((minutes, day.strftime('%a')[:2]))
+        maximum = max([v for v, _ in values] + [25])
+        for minutes, label in values:
+            trend_layout.addWidget(TrendBar(minutes, maximum, label))
+        layout.addWidget(trend_group)
 
         table_group = QGroupBox(tr("Recent records"))
         table_layout = QVBoxLayout(table_group)

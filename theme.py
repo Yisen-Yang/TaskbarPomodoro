@@ -218,6 +218,35 @@ PALETTES = {
 }
 
 
+
+# 长休息独立配色（紫色系），不改动原有 5 套主题的其他键值
+_LONG_BREAK_COLORS = {
+    "deep_space": dict(ring_long1=(155, 140, 255), ring_long2=(195, 182, 255),
+                       ring_inner_long1=(155, 140, 255, 22),
+                       ring_inner_long2=(195, 182, 255, 35),
+                       bg_top_long=(28, 26, 48, 175), bg_bottom_long=(22, 20, 36, 185)),
+    "light": dict(ring_long1=(116, 103, 232), ring_long2=(165, 154, 255),
+                  ring_inner_long1=(116, 103, 232, 18),
+                  ring_inner_long2=(165, 154, 255, 28),
+                  bg_top_long=(242, 240, 252, 232), bg_bottom_long=(228, 224, 245, 240)),
+    "tomato": dict(ring_long1=(255, 176, 160), ring_long2=(255, 217, 192),
+                   ring_inner_long1=(255, 176, 160, 26),
+                   ring_inner_long2=(255, 217, 192, 40),
+                   bg_top_long=(58, 28, 36, 200), bg_bottom_long=(38, 20, 28, 215)),
+    "forest": dict(ring_long1=(127, 212, 200), ring_long2=(182, 236, 226),
+                   ring_inner_long1=(127, 212, 200, 24),
+                   ring_inner_long2=(182, 236, 226, 38),
+                   bg_top_long=(20, 46, 42, 200), bg_bottom_long=(14, 34, 32, 215)),
+    "ios": dict(ring_long1=(94, 159, 255), ring_long2=(154, 197, 255),
+                ring_inner_long1=(94, 159, 255, 22),
+                ring_inner_long2=(154, 197, 255, 36),
+                bg_top_long=(34, 40, 52, 195), bg_bottom_long=(24, 28, 40, 210)),
+}
+for _key, _extra in _LONG_BREAK_COLORS.items():
+    if _key in PALETTES:
+        PALETTES[_key].update(_extra)
+
+
 def get_palette(key):
     """取主题配色；未知 key 回退到经典深空。"""
     return PALETTES.get(key, PALETTES["deep_space"])

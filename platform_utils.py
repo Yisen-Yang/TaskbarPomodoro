@@ -2,10 +2,9 @@
 """平台差异统一层。
 
 把 Windows 专属的 Win32 调用（置顶 / MCI 音效 / 注册表自启）与
-macOS、Linux 的对应实现收口到这里，业务代码只调用本模块的通用接口。
+Linux 的对应实现收口到这里，业务代码只调用本模块的通用接口。
 
 - Windows: 保持原有 Win32 行为（user32 / winmm / winreg）
-- macOS:   Qt 原生置顶 + afplay + launchd plist
 - Linux:   Qt 原生置顶 + paplay/aplay + XDG autostart
 """
 import os
@@ -16,7 +15,6 @@ import subprocess
 from i18n import tr
 
 IS_WIN = platform.system() == 'Windows'
-IS_MAC = platform.system() == 'Darwin'
 IS_LINUX = platform.system() == 'Linux'
 
 APP_NAME = 'PomodoroTaskbar'
@@ -47,7 +45,7 @@ def _get_mci():
 
 
 def play_sound_file(path, mci_type='waveaudio'):
-    """跨平台播放提示音。path 为本地音频文件（wav/mp3）。"""
+    """双平台播放提示音。path 为本地音频文件（wav/mp3）。"""
     try:
         if IS_WIN:
             mci = _get_mci()
@@ -56,10 +54,6 @@ def play_sound_file(path, mci_type='waveaudio'):
             mci.mciSendStringW('close bgm', None, 0, None)
             mci.mciSendStringW(f'open "{path}" type {mci_type} alias bgm', None, 0, None)
             mci.mciSendStringW('play bgm', None, 0, None)
-        elif IS_MAC:
-            # macOS 自带 afplay，支持 wav/mp3
-            subprocess.Popen(['afplay', path],
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             # Linux：优先 PulseAudio 的 paplay，回退 ALSA 的 aplay
             player = None
@@ -89,12 +83,10 @@ def _which(name):
 
 # ── 开机自启 ────────────────────────────────────────────────────────
 def set_auto_start(enable):
-    """跨平台设置开机自启。失败静默忽略。"""
+    """双平台设置开机自启。失败静默忽略。"""
     try:
         if IS_WIN:
             _set_auto_start_windows(enable)
-        elif IS_MAC:
-            _set_auto_start_mac(enable)
         elif IS_LINUX:
             _set_auto_start_linux(enable)
     except Exception:
@@ -112,8 +104,6 @@ def is_auto_start_enabled():
                 return True
             finally:
                 winreg.CloseKey(key)
-        elif IS_MAC:
-            return os.path.exists(_mac_plist_path())
         elif IS_LINUX:
             return os.path.exists(_linux_desktop_path())
     except Exception:
@@ -137,32 +127,6 @@ def _set_auto_start_windows(enable):
                 winreg.DeleteValue(key, APP_NAME)
         except FileNotFoundError:
             pass
-
-
-def _mac_plist_path():
-    return os.path.expanduser(f'~/Library/LaunchAgents/{APP_NAME}.plist')
-
-
-def _set_auto_start_mac(enable):
-    plist = _mac_plist_path()
-    if enable:
-        exe = os.path.abspath(_exe_path())
-        content = f'''<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key><string>{APP_NAME}</string>
-    <key>ProgramArguments</key><array><string>{exe}</string></array>
-    <key>RunAtLoad</key><true/>
-</dict>
-</plist>
-'''
-        os.makedirs(os.path.dirname(plist), exist_ok=True)
-        with open(plist, 'w', encoding='utf-8') as f:
-            f.write(content)
-    else:
-        if os.path.exists(plist):
-            os.remove(plist)
 
 
 def _linux_desktop_path():

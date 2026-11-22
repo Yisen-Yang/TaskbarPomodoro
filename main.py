@@ -12,7 +12,7 @@ from settings import SettingsManager, SettingsDialog
 from tray_icon import TrayIcon
 from history_manager import HistoryManager
 from history_dialog import HistoryDialog
-from platform_utils import play_sound_file, IS_MAC, IS_LINUX
+from platform_utils import play_sound_file
 from i18n import tr
 from diagnostics import install_exception_hook, safe_slot, log_exception
 import sounds
@@ -101,14 +101,7 @@ class PomodoroApp:
         self.window.update_time_display(minutes, seconds)
         self.window.update_progress(self.current_total_seconds, self.current_total_seconds)
 
-        # macOS：以顶部菜单栏为主，默认隐藏浮动窗口（点菜单『显示窗口』才弹出）
-        if IS_MAC:
-            if getattr(self, '_mac_window_hidden', None) is None:
-                self._mac_window_hidden = True
-            if not self._mac_window_hidden:
-                self.window.show()
-        else:
-            self.window.show()
+        self.window.show()
 
     def create_tray_icon(self):
         self.tray_icon = TrayIcon()
@@ -126,10 +119,7 @@ class PomodoroApp:
         # 同步连续专注初始状态
         continuous = self.settings_manager.get('continuous_focus')
         self.tray_icon.update_continuous_focus(continuous)
-
-        # macOS：窗口默认隐藏，托盘菜单文字改为『显示窗口』
-        if IS_MAC and getattr(self, '_mac_window_hidden', False):
-            self.tray_icon.toggle_window_action.setText(tr("Show window"))
+        self.tray_icon.set_theme(self.settings_manager.get('theme'))
 
     # ── 计时器回调 ────────────────────────────────────────────────
     @safe_slot
@@ -151,7 +141,9 @@ class PomodoroApp:
     @safe_slot
     def on_mode_changed(self, mode):
         if self.window:
-            self.window.set_mode(mode == TimerMode.WORK)
+            mode_key = ('work' if mode == TimerMode.WORK else
+                        'long_break' if mode == TimerMode.LONG_BREAK else 'break')
+            self.window.set_timer_mode(mode_key)
 
         if mode == TimerMode.WORK:
             self.current_total_seconds = self.timer.work_minutes * 60
@@ -213,7 +205,7 @@ class PomodoroApp:
 
     # ── 声音 / 通知 ──────────────────────────────────────────────
     def play_sound(self, kind):
-        """跨平台播放提示音。
+        """双平台播放提示音。
         kind='start' 用设置里的开始音效，'end' 用结束音效。"""
         try:
             key = self.settings_manager.get(f'{kind}_sound')
@@ -347,6 +339,7 @@ class PomodoroApp:
             self.current_total_seconds = break_minutes * 60
 
         language_changed = before.get('language') != language
+        theme_changed = before.get('theme') != now.get('theme')
         if self.window:
             # 应用新主题（即时生效，不重置计时）
             self.window.set_theme(now.get('theme'))
@@ -362,6 +355,8 @@ class PomodoroApp:
             self.window.update_preset_from_settings(work_minutes, break_minutes)
 
         if self.tray_icon:
+            if theme_changed:
+                self.tray_icon.set_theme(now.get('theme'))
             if language_changed:
                 self.tray_icon.retranslate()
                 if self.window:

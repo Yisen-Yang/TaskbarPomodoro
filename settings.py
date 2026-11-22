@@ -2,14 +2,17 @@ import os
 
 from PySide6.QtWidgets import (
     QDialog, QLabel, QSpinBox, QCheckBox,
-    QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox, QComboBox
+    QPushButton, QVBoxLayout, QHBoxLayout, QGroupBox, QComboBox,
+    QFrame
 )
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QPixmap
 
 from theme import theme_keys, theme_label
 from app_icon import get_app_icon
 from platform_utils import set_auto_start
 from i18n import i18n, tr, language_items
+from ui_style import settings_stylesheet
 import sounds
 
 
@@ -119,76 +122,68 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.settings_manager = settings_manager
         self._initial_language = settings_manager.get('language') or 'system'
+        self._theme_key = settings_manager.get('theme') or 'deep_space'
         self.setWindowTitle(tr("Settings"))
         self.setWindowIcon(get_app_icon())
         # 独立顶层窗口 + 置顶，避免被主窗口的 50ms topmost 抢占导致闪动
         self.setWindowFlags(Qt.Window | Qt.WindowStaysOnTopHint | Qt.WindowCloseButtonHint)
         self.setAttribute(Qt.WA_TranslucentBackground, False)
-        self.setMinimumSize(380, 0)
+        self.setObjectName('SettingsDialog')
+        self.setMinimumSize(400, 0)
         self.init_ui()
 
-    def init_ui(self):
-        # 实色背景，避免透明继承
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #f5f5f8;
-            }
-            QGroupBox {
-                font-weight: bold;
-                font-size: 13px;
-                border: 1px solid #d0d0d8;
-                border-radius: 8px;
-                margin-top: 12px;
-                padding: 16px 8px 8px 8px;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 12px;
-                padding: 0 6px;
-            }
-            QLabel {
-                font-size: 13px;
-                color: #333;
-            }
-            QSpinBox, QComboBox {
-                padding: 4px 8px;
-                border: 1px solid #c0c0c8;
-                border-radius: 4px;
-                background-color: white;
-                min-height: 26px;
-                font-size: 13px;
-            }
-            QSpinBox:focus, QComboBox:focus {
-                border: 2px solid #6a8caf;
-            }
-            QPushButton {
-                padding: 6px 20px;
-                border: 1px solid #b0b0b8;
-                border-radius: 6px;
-                background-color: white;
-                min-width: 70px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background-color: #e8e8f0;
-            }
-            QPushButton:pressed {
-                background-color: #d0d0d8;
-            }
-            QCheckBox {
-                font-size: 13px;
-                spacing: 8px;
-            }
-        """)
+    @staticmethod
+    def _gtitle(icon, text):
+        """分组标题：图标 + 文案。"""
+        return f"{icon}   {text}"
 
-        layout = QVBoxLayout(self)
-        layout.setSpacing(16)
-        layout.setContentsMargins(20, 20, 20, 20)
+    def apply_style(self, theme_key):
+        """应用/刷新整套样式（切换主题即时生效，不影响计时器）。"""
+        self._theme_key = theme_key
+        self.setStyleSheet(settings_stylesheet(theme_key))
+
+    def init_ui(self):
+        self.apply_style(self._theme_key)
+
+        root = QVBoxLayout(self)
+        root.setSpacing(0)
+        root.setContentsMargins(14, 14, 14, 14)
+
+        # ── 顶部品牌 Header ──
+        header = QFrame()
+        header.setObjectName('Header')
+        header.setFixedHeight(52)
+        header_l = QHBoxLayout(header)
+        header_l.setContentsMargins(12, 0, 12, 0)
+        header_l.setSpacing(10)
+
+        icon_label = QLabel()
+        icon_label.setObjectName('HeaderIcon')
+        pm = get_app_icon().pixmap(24, 24)
+        icon_label.setPixmap(pm)
+        icon_label.setFixedSize(24, 24)
+        header_l.addWidget(icon_label)
+
+        title_box = QVBoxLayout()
+        title_box.setSpacing(2)
+        self.header_title = QLabel(tr("Settings"))
+        self.header_title.setObjectName('HeaderTitle')
+        self.header_sub = QLabel("POMODORO  ·  FOCUS WITH TOMATOES")
+        self.header_sub.setObjectName('HeaderSub')
+        title_box.addWidget(self.header_title)
+        title_box.addWidget(self.header_sub)
+        header_l.addLayout(title_box)
+        header_l.addStretch()
+        root.addWidget(header)
+
+        # 内容区（卡片之间留间距）
+        content = QVBoxLayout()
+        content.setSpacing(0)
 
         # ── 时间设置 ──
-        self.time_group = QGroupBox(tr("Timer"))
+        self.time_group = QGroupBox(self._gtitle("⏱", tr("Timer")))
         time_layout = QVBoxLayout(self.time_group)
-        time_layout.setSpacing(12)
+        time_layout.setSpacing(6)
 
         self.work_label = QLabel(tr("Work (minutes):"))
         self.work_spin = QSpinBox()
@@ -196,6 +191,7 @@ class SettingsDialog(QDialog):
         self.work_spin.setValue(self.settings_manager.get('work_minutes'))
         work_layout = QHBoxLayout()
         work_layout.addWidget(self.work_label)
+        work_layout.addStretch()
         work_layout.addWidget(self.work_spin)
         time_layout.addLayout(work_layout)
 
@@ -205,6 +201,7 @@ class SettingsDialog(QDialog):
         self.break_spin.setValue(self.settings_manager.get('break_minutes'))
         break_layout = QHBoxLayout()
         break_layout.addWidget(self.break_label)
+        break_layout.addStretch()
         break_layout.addWidget(self.break_spin)
         time_layout.addLayout(break_layout)
 
@@ -214,6 +211,7 @@ class SettingsDialog(QDialog):
         self.long_break_spin.setValue(self.settings_manager.get('long_break_minutes'))
         long_break_layout = QHBoxLayout()
         long_break_layout.addWidget(self.long_break_label)
+        long_break_layout.addStretch()
         long_break_layout.addWidget(self.long_break_spin)
         time_layout.addLayout(long_break_layout)
 
@@ -223,38 +221,78 @@ class SettingsDialog(QDialog):
         self.interval_spin.setValue(self.settings_manager.get('long_break_interval'))
         interval_layout = QHBoxLayout()
         interval_layout.addWidget(self.interval_label)
+        interval_layout.addStretch()
         interval_layout.addWidget(self.interval_spin)
         time_layout.addLayout(interval_layout)
 
-        layout.addWidget(self.time_group)
+        content.addWidget(self.time_group)
 
         # ── 专注模式 ──
-        self.mode_group = QGroupBox(tr("Focus mode"))
+        self.mode_group = QGroupBox(self._gtitle("🔁", tr("Focus mode")))
         mode_layout = QVBoxLayout(self.mode_group)
-        mode_layout.setSpacing(8)
+        mode_layout.setSpacing(5)
         self.continuous_check = QCheckBox(
             tr("Continuous focus (auto cycle work + break until paused)"))
         self.continuous_check.setChecked(self.settings_manager.get('continuous_focus'))
         mode_layout.addWidget(self.continuous_check)
-        layout.addWidget(self.mode_group)
+        content.addWidget(self.mode_group)
 
-        # ── 外观主题 ──
-        self.theme_group = QGroupBox(tr("Appearance"))
-        theme_layout = QHBoxLayout(self.theme_group)
-        self.theme_label_widget = QLabel(tr("Theme:"))
+        # ── 外观主题（扁平色卡）──
+        self.theme_group = QGroupBox(self._gtitle("🎨", tr("Appearance")))
+        theme_layout = QVBoxLayout(self.theme_group)
+        theme_layout.setSpacing(6)
         self.theme_combo = QComboBox()
         cur_theme = self.settings_manager.get('theme') or 'deep_space'
         for key in theme_keys():
             self.theme_combo.addItem(theme_label(key), key)
         self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(cur_theme)))
-        theme_layout.addWidget(self.theme_label_widget)
+        self.theme_combo.setVisible(False)  # 保留控件对象名以兼容配置逻辑
+
+        palette_hints = {
+            'deep_space': ('#ff5f4b', '#ffa06e'),
+            'light': ('#e8544a', '#f5a06e'),
+            'tomato': ('#ff8266', '#ffc88a'),
+            'forest': ('#5adfa0', '#a2f0c6'),
+            'ios': ('#ff9f0a', '#ffd65a'),
+        }
+        short_names = {
+            'deep_space': '深空', 'light': '浅色', 'tomato': '番茄',
+            'forest': '森林', 'ios': 'iOS',
+        }
+        cards_row = QHBoxLayout()
+        cards_row.setSpacing(6)
+        self.theme_cards = []
+        for key in theme_keys():
+            c1, c2 = palette_hints.get(key, ('#888888', '#aaaaaa'))
+            card = QFrame()
+            card.setObjectName('ThemeCard')
+            card.setCursor(Qt.PointingHandCursor)
+            card.setProperty('themeKey', key)
+            card.setProperty('selected', key == cur_theme)
+            card_l = QVBoxLayout(card)
+            card_l.setContentsMargins(4, 5, 4, 5)
+            card_l.setSpacing(4)
+            bar = QFrame()
+            bar.setFixedHeight(4)
+            bar.setStyleSheet(
+                f"background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+                f"stop:0 {c1},stop:1 {c2});border-radius:2px;")
+            card_l.addWidget(bar)
+            name = QLabel(short_names.get(key, key))
+            name.setObjectName('ThemeCardName')
+            name.setAlignment(Qt.AlignCenter)
+            card_l.addWidget(name)
+            card.mousePressEvent = lambda e, k=key: self.on_theme_card_clicked(k)
+            self.theme_cards.append(card)
+            cards_row.addWidget(card)
+        theme_layout.addLayout(cards_row)
         theme_layout.addWidget(self.theme_combo)
-        layout.addWidget(self.theme_group)
+        content.addWidget(self.theme_group)
 
         # ── 声音设置 ──
-        self.sound_group = QGroupBox(tr("Sound"))
+        self.sound_group = QGroupBox(self._gtitle("🔊", tr("Sound")))
         sound_layout = QVBoxLayout(self.sound_group)
-        sound_layout.setSpacing(8)
+        sound_layout.setSpacing(6)
 
         self.sound_check = QCheckBox(tr("Enable sound"))
         self.sound_check.setChecked(self.settings_manager.get('sound_enabled'))
@@ -269,6 +307,7 @@ class SettingsDialog(QDialog):
             max(0, self.start_sound_combo.findData(cur_start)))
         start_row = QHBoxLayout()
         start_row.addWidget(self.start_label)
+        start_row.addStretch()
         start_row.addWidget(self.start_sound_combo)
         sound_layout.addLayout(start_row)
 
@@ -281,15 +320,16 @@ class SettingsDialog(QDialog):
             max(0, self.end_sound_combo.findData(cur_end)))
         end_row = QHBoxLayout()
         end_row.addWidget(self.end_label)
+        end_row.addStretch()
         end_row.addWidget(self.end_sound_combo)
         sound_layout.addLayout(end_row)
 
-        layout.addWidget(self.sound_group)
+        content.addWidget(self.sound_group)
 
         # ── 选项（含语言）──
-        self.option_group = QGroupBox(tr("Options"))
+        self.option_group = QGroupBox(self._gtitle("⚙", tr("Options")))
         option_layout = QVBoxLayout(self.option_group)
-        option_layout.setSpacing(8)
+        option_layout.setSpacing(6)
 
         self.auto_start_check = QCheckBox(tr("Run at startup"))
         self.auto_start_check.setChecked(self.settings_manager.get('auto_start_on_windows'))
@@ -304,22 +344,46 @@ class SettingsDialog(QDialog):
         self.language_combo.currentIndexChanged.connect(self.on_language_changed)
         language_row = QHBoxLayout()
         language_row.addWidget(self.language_label)
+        language_row.addStretch()
         language_row.addWidget(self.language_combo)
         option_layout.addLayout(language_row)
 
-        layout.addWidget(self.option_group)
+        content.addWidget(self.option_group)
+        root.addLayout(content)
 
         # ── 按钮 ──
         btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(8)
         btn_layout.addStretch()
-        self.ok_btn = QPushButton(tr("OK"))
-        self.ok_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(self.ok_btn)
         self.cancel_btn = QPushButton(tr("Cancel"))
+        self.cancel_btn.setObjectName('SecondaryButton')
         self.cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(self.cancel_btn)
-        layout.addLayout(btn_layout)
+        self.ok_btn = QPushButton(tr("OK"))
+        self.ok_btn.setObjectName('PrimaryButton')
+        self.ok_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(self.ok_btn)
+        root.addLayout(btn_layout)
+
+        # 主题下拉即时预览窗口样式（仅视觉，不写配置、不动计时）
+        self.theme_combo.currentIndexChanged.connect(self.on_theme_preview)
+
         self.adjustSize()
+
+    def on_theme_preview(self):
+        key = self.theme_combo.currentData()
+        if key:
+            self.apply_style(key)
+
+    def on_theme_card_clicked(self, key):
+        """点击色卡：同步隐藏的 combo 并即时预览，不写配置、不动计时。"""
+        idx = self.theme_combo.findData(key)
+        if idx >= 0:
+            self.theme_combo.setCurrentIndex(idx)
+        for card in self.theme_cards:
+            card.setProperty('selected', card.property('themeKey') == key)
+            card.style().unpolish(card)
+            card.style().polish(card)
 
     @staticmethod
     def _rebuild_combo(combo, items, current):
@@ -333,21 +397,21 @@ class SettingsDialog(QDialog):
     def retranslate(self):
         """切换语言时即时刷新当前已打开的设置窗口。"""
         self.setWindowTitle(tr("Settings"))
-        self.time_group.setTitle(tr("Timer"))
+        self.header_title.setText(tr("Settings"))
+        self.time_group.setTitle(self._gtitle("⏱", tr("Timer")))
         self.work_label.setText(tr("Work (minutes):"))
         self.break_label.setText(tr("Short break (minutes):"))
         self.long_break_label.setText(tr("Long break (minutes):"))
         self.interval_label.setText(tr("Long break every N pomodoros:"))
-        self.mode_group.setTitle(tr("Focus mode"))
+        self.mode_group.setTitle(self._gtitle("🔁", tr("Focus mode")))
         self.continuous_check.setText(
             tr("Continuous focus (auto cycle work + break until paused)"))
-        self.theme_group.setTitle(tr("Appearance"))
-        self.theme_label_widget.setText(tr("Theme:"))
-        self.sound_group.setTitle(tr("Sound"))
+        self.theme_group.setTitle(self._gtitle("🎨", tr("Appearance")))
+        self.sound_group.setTitle(self._gtitle("🔊", tr("Sound")))
         self.sound_check.setText(tr("Enable sound"))
         self.start_label.setText(tr("Start / next round:"))
         self.end_label.setText(tr("Focus end:"))
-        self.option_group.setTitle(tr("Options"))
+        self.option_group.setTitle(self._gtitle("⚙", tr("Options")))
         self.auto_start_check.setText(tr("Run at startup"))
         self.language_label.setText(tr("Language:"))
         self.ok_btn.setText(tr("OK"))

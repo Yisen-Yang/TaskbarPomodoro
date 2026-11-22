@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-"""跨平台打包脚本：Windows / macOS / Linux 通用，供 GitHub Actions 调用。
+"""双平台打包脚本：Windows / Linux，供 GitHub Actions 调用。
 
 用法：python build_all.py
-产物：dist/PomodoroTaskbar.exe (Win) / dist/PomodoroTaskbar.app (Mac) / dist/PomodoroTaskbar (Linux)
+产物：dist/PomodoroTaskbar.exe (Win) / dist/PomodoroTaskbar (Linux)
 """
 import platform
 import subprocess
@@ -17,18 +17,10 @@ except Exception:
 
 SYSTEM = platform.system()
 IS_WIN = SYSTEM == 'Windows'
-IS_MAC = SYSTEM == 'Darwin'
 
-# Windows 用 .ico；macOS 必须用 .icns；Linux 不设图标
-if IS_WIN:
-    icon_args = ['--icon', 'assets/app.ico']
-elif IS_MAC:
-    icon_args = ['--icon', 'assets/app.icns']
-else:
-    icon_args = []
-
-# macOS 的 .app bundle 本身就是目录，不能用 onefile（会冲突）
-mode_args = ['--onedir'] if IS_MAC else ['--onefile']
+# Windows 用 .ico；Linux 不设图标
+icon_args = ['--icon', 'assets/app.ico'] if IS_WIN else []
+mode_args = ['--onefile']
 
 EXCLUDES = [
     'pygame', 'numpy', 'scipy', 'matplotlib', 'PIL', 'Pillow', 'pandas',

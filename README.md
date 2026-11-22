@@ -4,9 +4,9 @@
 
 **常驻任务栏的极简番茄工作法工具 —— 专注与休息，抬眼即见。**
 
-基于 PySide6，跨平台支持 **Windows / macOS / Linux**。Windows 常驻任务栏上方，macOS 常驻顶部菜单栏（显示倒计时），Linux 为置顶小窗 / AppImage。
+基于 PySide6，支持 **Windows / Linux**。Windows 常驻任务栏上方，Linux 为置顶小窗 / AppImage。
 
-[English README](README_EN.md) · [![Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[English README](README_EN.md) · [![Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Linux](https://img.shields.io/badge/Platform-Linux-3C3C3C?logo=linux&logoColor=white)](https://www.linux.org/) [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
@@ -25,7 +25,7 @@
 | 计时器切走后走时不准 | 采用**单调时钟绝对时间戳**，系统卡顿或休眠唤醒后自动追平，不漂移 |
 | 换主题就要重来 | 切换主题、语言、音效时**计时不中断**，剩余时间与轮次原样保留 |
 | 打包工具动辄上百 MB | 仅依赖 PySide6，**EXE 约 44MB**；提供安装版 + 绿色版 |
-| 需要安装一堆音频库 | 直接调用系统播放器（Windows MCI / macOS `afplay` / Linux `paplay`），**零第三方音频依赖** |
+| 需要安装一堆音频库 | 直接调用系统播放器（Windows MCI / Linux `paplay`），**零第三方音频依赖** |
 | 界面千篇一律 | **5 种主题**一键切换（深空/浅色/番茄红/森林绿/iOS） |
 | 提示音不能换 | **16 种音效**自选，开始/结束分别设置；默认开始上行、结束下行 |
 
@@ -45,6 +45,9 @@
 - **16 种可选音效**：14 种代码合成 + 2 种方向音效；**开始/结束音效分别可选**，默认「上行提示」+「下行提示」，一听就知道是开始还是结束
 - **系统托盘**：托盘菜单可开始/暂停、查看历史、今日统计、显隐窗口、开机自启
 - **数据本地化**：设置与历史全部保存在本机，不联网、不上传
+- **精致 UI 2.0**：紧凑统一的右键 / 托盘菜单、长休息独立紫色与锁定态描边、设置页扁平无白底分组 + 5 张主题色卡
+- **近 7 日趋势**：历史窗口柱状图直观看到专注积累，数据全部来自本地
+- **安装体验**：安装向导可选界面语言，重装自动覆盖升级并保留数据
 
 ## 快速开始
 
@@ -64,21 +67,18 @@ python main.py
 
 | 平台 | 文件 | 说明 |
 |------|------|------|
-| Windows | `PomodoroTaskbar_安装版_vX.X.X.exe` | 双击安装到用户目录，自动建快捷方式，无需管理员权限，可卸载 |
+| Windows | `PomodoroTaskbar_安装版_vX.X.X.exe` | 双击安装到用户目录，自动建快捷方式，无需管理员权限，可卸载；安装时选语言、重装覆盖升级 |
 | Windows | `PomodoroTaskbar_绿色版_vX.X.X.zip` | 解压即用，删除文件夹即卸载（内含番茄图标原图） |
-| macOS | `PomodoroTaskbar_macOS.zip` | 解压得到 `.app`，拖进「应用程序」即可；菜单栏常驻显示倒计时 |
 | Linux | `PomodoroTaskbar_Linux_x86_64.AppImage` | 赋可执行权限后双击运行，免安装、跨发行版 |
-
-> macOS 首次打开：因未做开发者签名，需在「访达」中右键 → 打开（或系统设置 → 隐私与安全性 → 仍要打开）。
 
 ### 打包
 
 ```bash
-python build_all.py     # 跨平台（Win/Mac/Linux 通用）
+python build_all.py     # 双平台（Windows / Linux 通用）
 build.bat               # Windows 专用
 ```
 
-产物位于 `dist/`。构建脚本剔除了 PySide6 中未使用的 WebEngine、QML、3D、Charts 等模块以控制体积。三平台安装包由 GitHub Actions 在推送 `v*` 标签时自动构建并发布到 Releases。
+产物位于 `dist/`。构建脚本剔除了 PySide6 中未使用的 WebEngine、QML、3D、Charts 等模块以控制体积。双平台安装包由 GitHub Actions 在推送 `v*` 标签时自动构建并发布到 Releases。
 
 ## 使用说明
 
@@ -115,12 +115,12 @@ build.bat               # Windows 专用
 
 ## 技术栈
 
-- **PySide6**：跨平台 GUI 框架（仅用 QtWidgets / QtCore / QtGui）
+- **PySide6**：GUI 框架（仅用 QtWidgets / QtCore / QtGui）
 - **i18n.py**：轻量多语言层，英文原文作 key，内置中/英/日三套文案，支持「跟随系统」
-- **platform_utils.py**：平台差异统一层 —— 置顶（Win32 / Qt 原生）、音效（MCI / afplay / paplay）、开机自启（注册表 / launchd / XDG）
+- **platform_utils.py**：平台差异统一层 —— 置顶（Win32 / Qt 原生）、音效（MCI / paplay）、开机自启（注册表 / XDG）
 - **Win32 API**（仅 Windows，`ctypes`）：`SetWindowPos` 置顶、扩展窗口样式、任务栏高度计算
-- **PyInstaller**：三平台打包（Windows EXE / macOS .app / Linux ELF→AppImage）
-- **GitHub Actions**：推送 `v*` 标签时自动构建三平台安装包并发布到 Releases
+- **PyInstaller**：双平台打包（Windows EXE / Linux ELF→AppImage）
+- **GitHub Actions**：推送 `v*` 标签时自动构建双平台安装包并发布到 Releases
 
 ## 项目结构
 
@@ -130,7 +130,7 @@ build.bat               # Windows 专用
 ├── i18n.py              # 多语言字典与切换逻辑
 ├── diagnostics.py       # 本地崩溃日志与槽函数异常兜底
 ├── app_icon.py          # 全局唯一番茄图标源（窗口/托盘/对话框统一）
-├── platform_utils.py    # 平台差异层：置顶/音效/开机自启（三平台）
+├── platform_utils.py    # 平台差异层：置顶/音效/开机自启（双平台）
 ├── appbar_window.py     # 任务栏窗口、进度环、拖动/置顶/跨屏自适应
 ├── timer_logic.py       # 计时状态机（单调时钟 + 长休息）
 ├── settings.py          # 设置管理与设置对话框
@@ -138,16 +138,18 @@ build.bat               # Windows 专用
 ├── history_manager.py   # 历史记录读写与统计
 ├── history_dialog.py    # 历史记录对话框
 ├── theme.py             # 5 套主题配色定义
+├── ui_style.py          # 菜单与设置窗口统一 QSS 样式
 ├── sounds.py            # 16 种音效注册表
 ├── sound/               # 提示音文件（合成 WAV + mixkit MP3）
 ├── tools/               # 音效生成脚本
 ├── assets/              # 番茄闹钟图标（app.ico / tomato.png / 原始图留档）
 ├── installer.iss        # Inno Setup 安装版脚本（免管理员，Windows）
-├── build_all.py         # 跨平台打包脚本（Win/Mac/Linux 通用）
+├── build_all.py         # 双平台打包脚本（Windows / Linux 通用）
 ├── build.bat            # Windows 专用打包脚本
-├── .github/workflows/   # GitHub Actions 三平台自动构建配置
+├── .github/workflows/   # GitHub Actions 双平台自动构建配置
 │   └── release.yml
-├── docs/images/         # README 白底配图（真实软件截图）+ 生成脚本
+├── docs/images/         # README 白底配图 + 安装向导配图（真实截图）
+├── docs/design/         # UI 2.0 可交互设计稿（HTML 预览）
 ├── tests/               # 计时状态机单元测试
 ├── requirements.txt
 ├── README.md            # 中文说明
@@ -165,10 +167,9 @@ python -m unittest tests.test_timer_logic
 ## 注意事项
 
 - **Windows 10 / 11**：窗口常驻任务栏上方，置顶依赖 Win32 `SetWindowPos(HWND_TOPMOST)`
-- **macOS**：常驻顶部菜单栏显示倒计时，点菜单可展开；未做开发者签名，首次需右键打开
 - **Linux**：推荐 AppImage；需系统有 `paplay`/`aplay` 之一播放提示音（多数发行版自带）
-- 音效零第三方依赖：Windows 用系统 MCI，macOS 用 `afplay`，Linux 用 `paplay`/`aplay`
-- 设置与历史存于本机用户目录（Win: `%APPDATA%` / Mac: `~/Library/Application Support` / Linux: `~/.config`），换电脑不会带走
+- 音效零第三方依赖：Windows 用系统 MCI，Linux 用 `paplay`/`aplay`
+- 设置与历史存于本机用户目录（Win: `%APPDATA%` / Linux: `~/.config`），换电脑不会带走
 
 ## License
 

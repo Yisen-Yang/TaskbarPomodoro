@@ -1,13 +1,10 @@
-import platform
-
 from PySide6.QtWidgets import QSystemTrayIcon, QMenu
-from PySide6.QtGui import QAction, QIcon, QPixmap, QPainter, QFont, QColor
+from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal
 
 from app_icon import get_app_icon
 from i18n import tr
-
-IS_MAC = platform.system() == 'Darwin'
+from ui_style import menu_stylesheet
 
 
 class TrayIcon(QSystemTrayIcon):
@@ -24,6 +21,7 @@ class TrayIcon(QSystemTrayIcon):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._countdown_text = ''
+        self._theme_key = 'deep_space'
         self._running = False
         self.create_icon()
         self.create_menu()
@@ -41,28 +39,9 @@ class TrayIcon(QSystemTrayIcon):
         self.setToolTip(text)
 
     def update_countdown(self, text):
-        """更新时间显示：Windows/Linux 走 tooltip；macOS 菜单栏绘制『番茄+倒计时』。"""
+        """更新 tooltip 中的倒计时文字。"""
         self._countdown_text = text or ''
         self._refresh_tooltip()
-        if not IS_MAC:
-            return
-        try:
-            w, h = 180, 36
-            pix = QPixmap(w, h)
-            pix.fill(Qt.transparent)
-            p = QPainter(pix)
-            p.setRenderHint(QPainter.Antialiasing)
-            # 左侧番茄图标
-            icon = get_app_icon()
-            icon.paint(p, 0, 2, 32, 32)
-            # 右侧倒计时文字（白色，适配黑色菜单栏）
-            p.setFont(QFont("SF Pro Text", 20, QFont.Bold))
-            p.setPen(QColor(255, 255, 255))
-            p.drawText(36, 0, w - 36, h, Qt.AlignVCenter | Qt.AlignLeft, self._countdown_text)
-            p.end()
-            self.setIcon(QIcon(pix))
-        except Exception:
-            pass
 
     def create_menu(self):
         self.menu = QMenu()
@@ -118,7 +97,13 @@ class TrayIcon(QSystemTrayIcon):
         self.menu.addSeparator()
         self.menu.addAction(self.exit_action)
 
+        self.menu.setStyleSheet(menu_stylesheet(self._theme_key))
         self.setContextMenu(self.menu)
+
+    def set_theme(self, theme_key):
+        """切换主题时同步托盘菜单样式（不影响计时）。"""
+        self._theme_key = theme_key
+        self.menu.setStyleSheet(menu_stylesheet(theme_key))
 
     def retranslate(self):
         """切换界面语言后刷新托盘菜单与提示文字。"""
@@ -132,8 +117,6 @@ class TrayIcon(QSystemTrayIcon):
         self.toggle_window_action.setText(tr("Hide window"))
         self.exit_action.setText(tr("Exit"))
         self._refresh_tooltip()
-        if IS_MAC:
-            self.update_countdown(self._countdown_text)
 
     def update_state(self, is_running):
         self._running = is_running

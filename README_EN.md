@@ -4,9 +4,9 @@
 
 **A minimalist Pomodoro timer that lives in your taskbar — focus and breaks, always in sight.**
 
-Built with PySide6 for **Windows / macOS / Linux**. On Windows it sits on the taskbar; on macOS it stays in the menu bar with a live countdown; on Linux it is an always-on-top mini window shipped as an AppImage.
+Built with PySide6 for **Windows / Linux**. On Windows it sits on the taskbar; on Linux it is an always-on-top mini window shipped as an AppImage.
 
-[中文说明](README.md) · [![Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[中文说明](README.md) · [![Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows&logoColor=white)](https://www.microsoft.com/windows) [![Linux](https://img.shields.io/badge/Platform-Linux-3C3C3C?logo=linux&logoColor=white)](https://www.linux.org/) [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 </div>
 
@@ -25,7 +25,7 @@ Most Pomodoro apps open a separate window. You bring it to the front, and it cov
 | Time drifts after sleep or lag | **Monotonic absolute deadline**, automatically catches up after wake |
 | Changing the theme resets my timer | Theme, language and sound changes **never interrupt the running timer** |
 | The installer is hundreds of MB | Only PySide6 is required, **EXE is about 44 MB**; installer + portable builds |
-| I need extra audio libraries | Uses the OS player (Windows MCI / macOS `afplay` / Linux `paplay`), **no third-party audio deps** |
+| I need extra audio libraries | Uses the OS player (Windows MCI / Linux `paplay`), **no third-party audio deps** |
 | Every UI looks the same | **5 built-in themes** (deep space / light / tomato red / forest / iOS) |
 | I cannot change the alert sound | **16 selectable sounds**, separate start/end choices; defaults rise then fall |
 
@@ -45,6 +45,9 @@ Most Pomodoro apps open a separate window. You bring it to the front, and it cov
 - **16 sounds**: 14 synthesized + 2 directional ones; default **ascending** for start and **descending** for end, so you can tell them apart instantly
 - **System tray**: start/pause, history, today's stats, show/hide window, run at startup
 - **Local-only data**: settings and history stay on this machine; no network, no uploads
+- **Refined UI 2.0**: compact context / tray menus, distinct purple long-break and locked outline, flat section dividers with 5 theme swatches in settings
+- **7-day trend**: a bar chart in history for a quick read on focus time, all from local data
+- **Installer**: choose UI language at install time; reinstalling upgrades in place and keeps your data
 
 ## Quick start
 
@@ -61,21 +64,18 @@ Grab a package for your platform from [Releases](../../releases); no Python inst
 
 | Platform | File | Notes |
 |----------|------|-------|
-| Windows | `PomodoroTaskbar_安装版_vX.X.X.exe` | Installs to the user directory, no admin rights, shortcuts and uninstaller included |
+| Windows | `PomodoroTaskbar_安装版_vX.X.X.exe` | Installs to the user directory, no admin rights, shortcuts and uninstaller included; choose language at install, upgrades in place |
 | Windows | `PomodoroTaskbar_绿色版_vX.X.X.zip` | Portable; unzip and run, delete the folder to uninstall (includes the original icon) |
-| macOS | `PomodoroTaskbar_macOS.zip` | Unzip to get `.app`, drag into Applications; countdown lives in the menu bar |
 | Linux | `PomodoroTaskbar_Linux_x86_64.AppImage` | Make executable and run; no installation, works across distros |
-
-> On macOS the app is ad-hoc signed but not notarized. First launch: right-click → Open, or go to System Settings → Privacy & Security → Open Anyway.
 
 ### Building
 
 ```bash
-python build_all.py     # Windows / macOS / Linux
+python build_all.py     # Windows / Linux
 build.bat               # Windows only
 ```
 
-Output goes to `dist/`. The build scripts exclude unused PySide6 modules (WebEngine, QML, 3D, Charts, …) to keep the size small. Pushing a `v*` tag makes GitHub Actions build and publish all three platform packages.
+Output goes to `dist/`. The build scripts exclude unused PySide6 modules (WebEngine, QML, 3D, Charts, …) to keep the size small. Pushing a `v*` tag makes GitHub Actions build and publish both platform packages.
 
 ## Usage
 
@@ -112,11 +112,11 @@ All data stays on this machine and is never uploaded.
 
 ## Tech stack
 
-- **PySide6**: cross-platform GUI (QtWidgets / QtCore / QtGui only)
+- **PySide6**: GUI (QtWidgets / QtCore / QtGui only)
 - **i18n.py**: lightweight language layer keyed by English source text, with Chinese / English / Japanese dictionaries and "follow system" support
-- **platform_utils.py**: platform abstraction — pinning (Win32 / Qt), sound (MCI / afplay / paplay), autostart (registry / launchd / XDG)
+- **platform_utils.py**: platform abstraction — pinning (Win32 / Qt), sound (MCI / paplay), autostart (registry / XDG)
 - **Win32 API** (Windows only, via `ctypes`): `SetWindowPos` pinning, extended window styles, taskbar height detection
-- **PyInstaller**: three-platform packaging (Windows EXE / macOS .app / Linux ELF → AppImage)
+- **PyInstaller**: two-platform packaging (Windows EXE / Linux ELF → AppImage)
 - **GitHub Actions**: pushing a `v*` tag builds and publishes all packages to Releases
 
 ## Project structure
@@ -135,16 +135,18 @@ All data stays on this machine and is never uploaded.
 ├── history_manager.py   # History storage and statistics
 ├── history_dialog.py    # History dialog
 ├── theme.py             # 5 color themes
+├── ui_style.py          # Shared QSS for menus and settings
 ├── sounds.py            # Registry of 16 sounds
 ├── sound/               # Sound files (synth WAV + mixkit MP3)
 ├── tools/               # Sound generation script
 ├── assets/              # Tomato alarm-clock icons
 ├── installer.iss        # Inno Setup script (per-user install, no admin)
-├── build_all.py         # Cross-platform build script
+├── build_all.py         # Two-platform build script
 ├── build.bat            # Windows build script
-├── .github/workflows/   # GitHub Actions for three platforms
+├── .github/workflows/   # GitHub Actions for two platforms
 │   └── release.yml
-├── docs/images/         # README light-theme images (real app screenshots) + generator
+├── docs/images/         # README screenshots + installer artwork
+├── docs/design/         # Interactive UI 2.0 design preview (HTML)
 ├── tests/               # Timer state machine tests
 ├── requirements.txt
 ├── README.md            # 中文说明
@@ -162,10 +164,9 @@ Tests cover initial state, duration changes, long-break interval, drift resistan
 ## Notes
 
 - **Windows 10 / 11**: the window sits on the taskbar and relies on `SetWindowPos(HWND_TOPMOST)`
-- **macOS**: lives in the menu bar with a countdown; right-click to open on first launch
 - **Linux**: AppImage recommended; needs `paplay` or `aplay` to play sounds (present on most distributions)
-- Sound playback uses the OS player only: MCI on Windows, `afplay` on macOS, `paplay`/`aplay` on Linux
-- Settings and history are stored under the user directory (Win: `%APPDATA%` / macOS: `~/Library/Application Support` / Linux: `~/.config`); they do not follow you to another machine
+- Sound playback uses the OS player only: MCI on Windows, `paplay`/`aplay` on Linux
+- Settings and history are stored under the user directory (Win: `%APPDATA%` / Linux: `~/.config`); they do not follow you to another machine
 
 ## License
 
